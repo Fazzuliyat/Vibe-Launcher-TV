@@ -3,8 +3,12 @@ Modulo per la gestione completa del joystick
 Gestisce inizializzazione, polling, mappatura pulsanti e notifiche
 """
 
+import os
+import sys
+import ctypes
 from PyQt6.QtCore import QTimer, Qt, QCoreApplication
 from PyQt6.QtGui import QKeyEvent
+from PyQt6.QtWidgets import QApplication
 import pygame
 
 try:
@@ -13,6 +17,53 @@ try:
 except ImportError:
     JOYSTICK_AVAILABLE = False
     print("Warning: pygame not installed. Joystick support disabled.")
+
+
+# ---------------------------------------------------------------------------
+# Guide / Home button
+# ---------------------------------------------------------------------------
+# Xbox pads: SDL (and therefore pygame) never reports the Guide button on Windows,
+# so it is read straight from XInput (hidden "XInputGetStateEx" export, ordinal 100).
+# Turn off Settings > Gaming > Xbox Game Bar > "Open Xbox Game Bar using this button
+# on a controller", otherwise Windows also pops its overlay on every press.
+#
+# PlayStation / other pads: put the raw pygame button index of the PS/Home button here.
+# To find it, start the launcher with the environment variable TVL_DEBUG_BUTTONS=1
+# (e.g. in a console: set TVL_DEBUG_BUTTONS=1 & python TvLauncher_Windows.py),
+# press the button, and read "[joystick] button index N pressed". Then e.g. (12,)
+GUIDE_BUTTON_INDEXES = ()
+DEBUG_BUTTONS = os.environ.get("TVL_DEBUG_BUTTONS") == "1"
+
+_XINPUT_GUIDE_MASK = 0x0400
+_XINPUT_STATE = None
+
+
+def _load_xinput_get_state_ex():
+    """XInputGetStateEx (ordinal 100) or None if unavailable / not on Windows."""
+    global _XINPUT_STATE
+    if sys.platform != "win32":
+        return None
+    from ctypes import wintypes
+
+    class _Gamepad(ctypes.Structure):
+        _fields_ = [("wButtons", wintypes.WORD),
+                    ("bLeftTrigger", ctypes.c_ubyte), ("bRightTrigger", ctypes.c_ubyte),
+                    ("sThumbLX", ctypes.c_short), ("sThumbLY", ctypes.c_short),
+                    ("sThumbRX", ctypes.c_short), ("sThumbRY", ctypes.c_short)]
+
+    class _State(ctypes.Structure):
+        _fields_ = [("dwPacketNumber", wintypes.DWORD), ("Gamepad", _Gamepad)]
+
+    _XINPUT_STATE = _State
+    for dll in ("xinput1_4", "xinput1_3", "xinput9_1_0"):
+        try:
+            fn = ctypes.WinDLL(dll)[100]
+            fn.argtypes = [wintypes.DWORD, ctypes.POINTER(_State)]
+            fn.restype = wintypes.DWORD
+            return fn
+        except (OSError, AttributeError):
+            continue
+    return None
 
 
 class JoystickManager:
@@ -51,7 +102,12 @@ class JoystickManager:
         self._carousel_last_y = (False, False, 0, False, False)
         self._pc_last_state = (False, False, 0, False, False)
         self._pc_last_x     = (False, False, 0, False, False)
-        
+
+        # Guide / Home button state
+        self._guide_was_down = False
+        self._dbg_down = set()
+        self._xinput_get_state_ex = _load_xinput_get_state_ex()
+
         if JOYSTICK_AVAILABLE:
             pygame.init()
             self.init_joystick()
@@ -179,16 +235,29 @@ class JoystickManager:
             if not pygame.joystick.get_init() or pygame.joystick.get_count() == 0:
                 raise pygame.error("Joystick system not ready or no device")
             
+            # Guide / Home button (checked first; the launcher decides if it may act on it)
+            if self._poll_guide_button():
+                handler = getattr(self.parent, "on_guide_button", None)
+                if handler:
+                    handler()
+                return
+
             # Distribuisci ai vari handler in ordine di priorità
             if self._handle_parental_control():
                 return
 
             if self._handle_settings_menu():
                 return
-            
+
+            # Confirm / info dialogs (restart, shutdown, sleep, ...) take the gamepad.
+            # Must run BEFORE the inputs_enabled gate: dialogs such as "Launch Error"
+            # open while inputs are disabled.
+            if self._handle_exit_dialog():
+                return
+
             if not self.parent.inputs_enabled:
                 return
-            
+
             if self._handle_reorder_mode():
                 return
             # Gestisci category selector se abilitato e aperto
@@ -198,9 +267,6 @@ class JoystickManager:
                     self._handle_category_selector()
                     return
 
-            if self._handle_exit_dialog():
-                return
-            
             if self._handle_quick_search():
                 return
             
@@ -360,9 +426,43 @@ class JoystickManager:
 
         
     
+    def _poll_guide_button(self):
+        """Edge-detect the Guide / Home button. True only on the tick it is pressed."""
+        joy = self.joystick
+        n = joy.get_numbuttons()
+        if DEBUG_BUTTONS:
+            down = {i for i in range(n) if joy.get_button(i)}
+            for i in sorted(down - self._dbg_down):
+                print(f"[joystick] button index {i} pressed")
+            self._dbg_down = down
+
+        raw = [i for i in GUIDE_BUTTON_INDEXES if i < n and joy.get_button(i)]
+        now = pygame.time.get_ticks()
+        for i in raw:
+            # keep the other handlers from also acting on this physical button
+            self.button_cooldown[i] = now + 1000
+
+        down = bool(raw) or self._xinput_guide_down()
+        pressed = down and not self._guide_was_down
+        self._guide_was_down = down
+        return pressed
+
+    def _xinput_guide_down(self):
+        if not self._xinput_get_state_ex:
+            return False
+        state = _XINPUT_STATE()
+        for user in range(4):
+            if (self._xinput_get_state_ex(user, ctypes.byref(state)) == 0
+                    and state.Gamepad.wButtons & _XINPUT_GUIDE_MASK):
+                return True
+        return False
+
     def _handle_exit_dialog(self):
-        """Gestisce exit confirmation dialog"""
-        if not (hasattr(self.parent, '_exit_dialog_active') and self.parent._exit_dialog_active):
+        """Gestisce exit confirmation dialog e tutti i dialog di conferma/info
+        creati da _make_confirm_dialog/_make_info_dialog (restart, shutdown, sleep...)."""
+        modal = QApplication.activeModalWidget()
+        if not (getattr(self.parent, '_exit_dialog_active', False)
+                or getattr(modal, '_tvl_gamepad_dialog', False)):
             self._exit_dialog_last_x = (False, False, 0, False, False)
             return False
         
@@ -754,9 +854,13 @@ class JoystickManager:
     def _simulate_key(self, key):
         """Simula la pressione di un tasto"""
         event = QKeyEvent(QKeyEvent.Type.KeyPress, key, Qt.KeyboardModifier.NoModifier)
-        active_win = QCoreApplication.instance().activeWindow()
-        if active_win:
-            QCoreApplication.postEvent(active_win, event)
+        # A modal dialog must receive the key even if Windows hasn't made it the
+        # "active window" (frameless / fullscreen launcher window).
+        target = (QApplication.activeModalWidget()
+                  or QApplication.activePopupWidget()
+                  or QApplication.activeWindow())
+        if target:
+            QCoreApplication.postEvent(target, event)
     
     def _open_settings(self):
         """Apre il menu settings"""

@@ -1,3 +1,17 @@
+# Vibe Launcher TV
+
+> A TV-mode fork of [TV Launcher by Darkvinx88](https://github.com/Darkvinx88/TvLauncher), used under the MIT license (see `LICENSE`). The original README follows below.
+
+## What's different in this fork
+
+- **App icons:** tiles whose icon is only an `.exe` (for example VacuumTube) now get a card built from the exe's own icon instead of an empty box. Real cover art is still used when present.
+- **No quit prompt:** Back / Esc / B on the home screen no longer asks to quit. Set `HOME_BACK_ACTION` at the top of `TvLauncher_Windows.py` to `"none"` (default) or `"sleep"`. The power-bar close (✕) button is removed. `Ctrl+Shift+Q` still closes the launcher from a keyboard.
+- **Gamepad in dialogs:** D-pad, A and B now work inside the Restart / Shutdown / Sleep confirmations and the other confirm/info dialogs.
+- **Real sleep:** Sleep calls `SetSuspendState` directly, so it never hibernates.
+- **Guide / Home button:** the Xbox Guide button is read through XInput (pygame never reports it on Windows). `GUIDE_ACTION` (`"power_bar"`, `"sleep_confirm"` or `"sleep_now"`) sets what it does. For PlayStation pads, set `GUIDE_BUTTON_INDEXES` in `modules/joystick_manager.py`; start the launcher with `TVL_DEBUG_BUTTONS=1` to print button indexes. Turn off Windows' "Open Xbox Game Bar using this button on a controller" setting so the overlay does not also open.
+
+---
+
 # TV Launcher
 
 A sleek, console-style application launcher for Windows and Linux with gamepad support, automatic image fetching, and powerful organization features.

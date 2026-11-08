@@ -2,6 +2,8 @@ import sys
 import json
 import subprocess
 import os
+import re
+import hashlib
 import winreg
 import random
 from pathlib import Path
@@ -9,14 +11,18 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout,
     QHBoxLayout, QLabel, QPushButton, QFileDialog,
     QDialog, QLineEdit, QMessageBox, QGraphicsDropShadowEffect,
-    QListWidget, QListWidgetItem, QProgressBar, QProgressDialog, 
+    QListWidget, QListWidgetItem, QProgressBar, QProgressDialog,
+    QFileIconProvider,
 )
 from PyQt6.QtCore import (
     Qt, QPropertyAnimation, QEasingCurve, QPoint, QSize,
     QParallelAnimationGroup, QTimer, QCoreApplication,
-    QThread, pyqtSignal
+    QThread, pyqtSignal, QFileInfo
 )
-from PyQt6.QtGui import QPixmap, QFont, QKeyEvent, QPainter, QColor, QIcon, QBrush
+from PyQt6.QtGui import (
+    QPixmap, QFont, QKeyEvent, QPainter, QColor, QIcon, QBrush,
+    QImage, QLinearGradient
+)
 import psutil
 from modules.app_reorder import integrate_reorder_mode
 from modules.search_widget import QuickSearchWidget
@@ -83,6 +89,24 @@ import platform as _platform
 _cache_suffix = "windows" if _platform.system() == "Windows" else "linux"
 SCANNER_CACHE_FILE = USER_DATA_DIR / f'scanner_cache_{_cache_suffix}.json'
 
+# ---------------------------------------------------------------------------
+# TV / console customisation
+# ---------------------------------------------------------------------------
+# What Back / Esc / B does on the HOME screen (no dialog, bottom bar not focused):
+#   "none"  -> nothing (recommended: one stray B press can't do anything)
+#   "sleep" -> put the PC to sleep immediately
+HOME_BACK_ACTION = "none"
+
+# What the Xbox / PlayStation Guide (Home) button does:
+#   "power_bar"     -> jump to the Restart / Sleep / Shutdown bar (press again to leave it)
+#   "sleep_confirm" -> open the "are you sure you want to sleep?" dialog
+#   "sleep_now"     -> sleep immediately
+GUIDE_ACTION = "power_bar"
+
+# Generated tile images for apps that only have an .exe (no cover art)
+ICON_CACHE_DIR = USER_DATA_DIR / 'icon_cache'
+ICON_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
 # Auto-migrazione config
 _old_config = Path(BASE_DIR) / 'launcher_apps.json'
 if _old_config.exists() and not CONFIG_FILE.exists():
@@ -147,6 +171,83 @@ except ImportError:
     REQUESTS_AVAILABLE = False
     print("Warning: requests not installed. Online image search disabled.")
     print("Install with: pip install requests")
+
+
+_IMAGE_EXTS = ('.png', '.jpg', '.jpeg', '.webp', '.bmp', '.gif')
+
+
+def _find_launch_target(command):
+    """Pull the .exe/.lnk out of a launch command such as
+    '"C:\\Apps\\Foo\\foo.exe" --fullscreen'. Returns None if nothing exists on disk."""
+    if not command:
+        return None
+    text = os.path.expandvars(str(command).strip().strip('"'))
+    if os.path.isfile(text):
+        return text
+    m = re.search(r'([A-Za-z]:[\\/][^"<>|?*\r\n]*?\.(?:exe|lnk|bat|cmd))', text, re.IGNORECASE)
+    if m and os.path.isfile(m.group(1)):
+        return m.group(1)
+    return None
+
+
+def _shell_icon_pixmap(target, size=256):
+    """The icon Windows Explorer shows for an exe/lnk (same method program_scanner.py uses)."""
+    try:
+        icon = QFileIconProvider().icon(QFileInfo(str(target)))
+        if icon.isNull():
+            return None
+        pm = icon.pixmap(size, size)
+        return None if pm.isNull() else pm
+    except Exception as e:
+        print(f"⚠️ Icon extraction failed for {target}: {e}")
+        return None
+
+
+def _render_tile_card(name, icon_pm, out_path, w=960, h=540):
+    """16:9 card (same shape as the tiles) with the app icon centred on a gradient.
+    With no icon at all it draws the app's first letter, so a tile is never an empty box."""
+    hue = int(hashlib.md5(name.encode('utf-8', 'ignore')).hexdigest()[:4], 16) % 360
+    img = QImage(w, h, QImage.Format.Format_ARGB32)
+    img.fill(Qt.GlobalColor.transparent)
+    p = QPainter(img)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+    grad = QLinearGradient(0, 0, w, h)
+    grad.setColorAt(0.0, QColor.fromHsl(hue, 150, 105))
+    grad.setColorAt(1.0, QColor.fromHsl((hue + 25) % 360, 170, 38))
+    p.fillRect(0, 0, w, h, QBrush(grad))
+    if icon_pm is not None:
+        side = int(h * 0.56)
+        scaled = icon_pm.scaled(side, side, Qt.AspectRatioMode.KeepAspectRatio,
+                                Qt.TransformationMode.SmoothTransformation)
+        p.drawPixmap((w - scaled.width()) // 2, (h - scaled.height()) // 2, scaled)
+    else:
+        font = QFont()
+        font.setBold(True)
+        font.setPixelSize(int(h * 0.45))
+        p.setFont(font)
+        p.setPen(QColor("white"))
+        p.drawText(0, 0, w, h, Qt.AlignmentFlag.AlignCenter, (name.strip()[:1] or "?").upper())
+    p.end()
+    return img.save(str(out_path), "PNG")
+
+
+def resolve_tile_image(app_data):
+    """Image file to show on an app tile.
+    - a real image (cover art / custom PNG)  -> used as is
+    - an .exe, empty, or missing icon        -> a card built from the exe's own icon (cached)"""
+    icon = app_data.get('icon')
+    if isinstance(icon, str) and icon and icon.lower().endswith(_IMAGE_EXTS) and Path(icon).is_file():
+        return icon
+    name = str(app_data.get('name') or '?')
+    src = icon if (isinstance(icon, str) and icon and Path(icon).is_file()) else None
+    src = src or _find_launch_target(app_data.get('path'))
+    key = hashlib.md5(f"{name}|{src}".encode('utf-8', 'ignore')).hexdigest()[:16]
+    out = ICON_CACHE_DIR / f"{key}.png"
+    if out.exists():
+        return str(out)
+    pm = _shell_icon_pixmap(src) if src else None
+    return str(out) if _render_tile_card(name, pm, out) else None
 
 
 def rounded_pixmap(original_path, width, height, radius):
@@ -267,7 +368,8 @@ class AppTile(QWidget):
         self.glow_effect = None
         self._normal_pixmap = None
         self._focused_pixmap = None
-        
+        self._resolved_icon = None
+
         self.normal_width = self.scaling.scale(360)
         self.normal_height = self.scaling.scale(260)
         self.focused_width = self.scaling.scale(400)
@@ -309,10 +411,16 @@ class AppTile(QWidget):
         self.setLayout(layout)
         self.set_focused(False)
 
+    def _tile_image_path(self):
+        # .exe / empty / missing icons become a generated card (see resolve_tile_image)
+        if self._resolved_icon is None:
+            self._resolved_icon = resolve_tile_image(self.app_data) or ''
+        return self._resolved_icon
+
     def set_focused(self, focused):
         self.is_focused = focused
-        icon_path = self.app_data.get('icon')
-        
+        icon_path = self._tile_image_path()
+
         if focused:
             self.setFixedSize(self.focused_width, self.focused_height)
             self.image_label.setFixedSize(self.focused_img_width, self.focused_img_height)
@@ -1073,17 +1181,11 @@ class TVLauncher(QMainWindow):
         self.shutdown_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         button_layout.addWidget(self.shutdown_btn)
 
-        self.close_btn = QPushButton("✕")
-        self.close_btn.setFixedSize(btn_size, btn_size)
-        self.close_btn.setToolTip("Close")
-        self.close_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        button_layout.addWidget(self.close_btn)
-
+        # TV setup: no "Close launcher" (✕) button on the power bar.
         self.menu_buttons = [
             ("restart", self.restart_btn),
             ("sleep", self.sleep_btn),
             ("shutdown", self.shutdown_btn),
-            ("close", self.close_btn)
         ]
         for action, btn in self.menu_buttons:
             btn.clicked.connect(lambda checked, a=action: self.execute_menu_action_direct(a))
@@ -1506,6 +1608,13 @@ class TVLauncher(QMainWindow):
 
         confirm_dialog.keyPressEvent = confirm_key_handler
         update_confirm_focus()
+        # Gamepad: JoystickManager routes D-pad / A / B to any modal dialog carrying this flag
+        confirm_dialog._tvl_gamepad_dialog = True
+        # Make sure the dialog really owns focus. The gamepad posts key events to the
+        # active window, so without this it can keep steering the window underneath.
+        QTimer.singleShot(0, lambda: (confirm_dialog.raise_(),
+                                      confirm_dialog.activateWindow(),
+                                      confirm_dialog.setFocus()))
         return confirm_dialog
 
     def _make_info_dialog(self, title, message_text):
@@ -1554,6 +1663,8 @@ class TVLauncher(QMainWindow):
                 super(dlg.__class__, dlg).keyPressEvent(event)
 
         dlg.keyPressEvent = key_handler
+        dlg._tvl_gamepad_dialog = True
+        QTimer.singleShot(0, lambda: (dlg.raise_(), dlg.activateWindow(), dlg.setFocus()))
         return dlg
 
     def _make_question_dialog(self, title, message_text):
@@ -1596,9 +1707,51 @@ class TVLauncher(QMainWindow):
             elif action == "shutdown":
                 subprocess.run(["shutdown", "/s", "/t", "0"], shell=True)
             elif action == "sleep":
-                subprocess.run(["rundll32.exe", "powrprof.dll,SetSuspendState", "0,1,0"], shell=True)
+                self._suspend_to_ram()
         except Exception as e:
             self._make_info_dialog("Error", f"Impossibile eseguire {action}:<br>{str(e)}").exec()
+
+    def _suspend_to_ram(self):
+        """Real Sleep, never Hibernate.
+        `rundll32 powrprof.dll,SetSuspendState 0,1,0` hibernates instead of sleeping whenever
+        Hibernate is enabled in Windows (rundll32 doesn't deliver the 0 as the 'hibernate'
+        flag), so call the API directly: SetSuspendState(bHibernate, bForce, bWakeupDisabled)."""
+        import ctypes
+        ctypes.windll.powrprof.SetSuspendState(False, True, False)
+
+    def _on_home_back_pressed(self):
+        """Back / Esc / B on the home screen."""
+        if HOME_BACK_ACTION == "sleep":
+            self.execute_power_action("sleep")
+        # "none": do nothing
+
+    def on_guide_button(self):
+        """Xbox / PlayStation Guide (Home) button. Called by JoystickManager."""
+        if (QApplication.activeModalWidget() is not None
+                or not self.inputs_enabled
+                or getattr(self, 'parental_control_dialog_active', False)
+                or getattr(self, 'is_in_category_selector', False)
+                or getattr(self, 'reorder_active', False)
+                or (hasattr(self, 'settings_menu') and self.settings_menu.is_open)
+                or (hasattr(self, 'quick_search') and self.quick_search.isVisible())):
+            return
+        self.sound_manager.navigate()
+        if GUIDE_ACTION == "sleep_now":
+            self.execute_power_action("sleep")
+        elif GUIDE_ACTION == "sleep_confirm":
+            self.confirm_action("sleep")
+        elif self.is_in_menu:                       # "power_bar": second press leaves the bar
+            self.is_in_menu = False
+            self._reset_menu_styles()
+            if self.menu_bar_needs_reveal and self.menu_bar_visible:
+                self._animate_reveal(False)
+        else:                                       # "power_bar": jump to the bar, focus Sleep
+            self.is_in_menu = True
+            self.menu_button_index = next(
+                (i for i, (a, _b) in enumerate(self.menu_buttons) if a == "sleep"), 0)
+            if self.menu_bar_needs_reveal and not self.menu_bar_visible:
+                self._animate_reveal(True)
+            self.update_menu_focus()
 
     def build_infinite_carousel(self):
         for tile in self.tiles:
@@ -1925,6 +2078,15 @@ class TVLauncher(QMainWindow):
 
         key = event.key()
 
+        # Maintenance exit (keyboard only): Ctrl+Shift+Q closes the launcher.
+        # There is no other way out now that "Quit to Desktop" is gone.
+        mods = event.modifiers()
+        if (key == Qt.Key.Key_Q
+                and mods & Qt.KeyboardModifier.ControlModifier
+                and mods & Qt.KeyboardModifier.ShiftModifier):
+            self.close()
+            return
+
         if key == Qt.Key.Key_S:
             self.disable_inputs()
             self.sound_manager.navigate()
@@ -2009,8 +2171,7 @@ class TVLauncher(QMainWindow):
                 self.is_in_menu = False
                 self._reset_menu_styles()
             else:
-                self.sound_manager.navigate()
-                self.confirm_exit_launcher()
+                self._on_home_back_pressed()
 
     def _reset_menu_styles(self):
         for action, btn in self.menu_buttons:
