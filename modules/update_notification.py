@@ -27,8 +27,8 @@ LAUNCHER_VERSION = "1.5.0"
 # Set both to your own repository, e.g. GITHUB_OWNER = "yourname" and
 # GITHUB_REPO = "Vibe-Launcher-TV". While either is empty the check is switched off
 # (it must not point at the upstream project: its releases do not contain these changes).
-GITHUB_OWNER = ""
-GITHUB_REPO  = ""
+GITHUB_OWNER = "Fazzuliyat"
+GITHUB_REPO  = "Vibe-Launcher-TV"
 RELEASES_API = (
     f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/releases/latest"
 )

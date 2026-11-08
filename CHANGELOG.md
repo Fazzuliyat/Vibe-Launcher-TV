@@ -18,7 +18,7 @@ First release of **Vibe Launcher TV**, based on TV Launcher 1.4.2 by Darkvinx88.
 - Sleep now calls `SetSuspendState` directly instead of `rundll32`, which hibernated whenever Windows hibernation was enabled.
 - Gamepad key events go to the active modal dialog even when Windows has not made it the active window.
 - Window title, installer banner and console title say "Vibe Launcher TV".
-- The update check no longer looks at the upstream repository. It stays off until `GITHUB_OWNER` and `GITHUB_REPO` are set.
+- The update check no longer looks at the upstream repository. It looks at the Vibe-Launcher-TV releases (`GITHUB_OWNER` and `GITHUB_REPO`).
 - The README was rewritten for Windows TV use.
 - Settings info panel: the credit now reads "Based on TV Launcher by Darkvinx88", and "View on GitHub" opens your repository once `GITHUB_OWNER` and `GITHUB_REPO` are set (until then it opens the original project).
 
