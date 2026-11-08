@@ -1,4 +1,5 @@
 @echo off
+title Vibe Launcher TV
 cd /d "%~dp0"
 
 :: Activate virtual environment

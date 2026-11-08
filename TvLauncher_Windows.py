@@ -986,7 +986,7 @@ class TVLauncher(QMainWindow):
         self.enable_inputs()
 
     def init_ui(self):
-        self.setWindowTitle("TV Launcher")
+        self.setWindowTitle("Vibe Launcher TV")
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         if JOYSTICK_AVAILABLE and self.joystick_manager.joystick:
             print(f"🎮 Joystick ready: {self.joystick_manager.joystick.get_name()}")

@@ -1,591 +1,137 @@
 # Vibe Launcher TV
 
-> A TV-mode fork of [TV Launcher by Darkvinx88](https://github.com/Darkvinx88/TvLauncher), used under the MIT license (see `LICENSE`). The original README follows below.
-
-## What's different in this fork
-
-- **App icons:** tiles whose icon is only an `.exe` (for example VacuumTube) now get a card built from the exe's own icon instead of an empty box. Real cover art is still used when present.
-- **No quit prompt:** Back / Esc / B on the home screen no longer asks to quit. Set `HOME_BACK_ACTION` at the top of `TvLauncher_Windows.py` to `"none"` (default) or `"sleep"`. The power-bar close (✕) button is removed. `Ctrl+Shift+Q` still closes the launcher from a keyboard.
-- **Gamepad in dialogs:** D-pad, A and B now work inside the Restart / Shutdown / Sleep confirmations and the other confirm/info dialogs.
-- **Real sleep:** Sleep calls `SetSuspendState` directly, so it never hibernates.
-- **Guide / Home button:** the Xbox Guide button is read through XInput (pygame never reports it on Windows). `GUIDE_ACTION` (`"power_bar"`, `"sleep_confirm"` or `"sleep_now"`) sets what it does. For PlayStation pads, set `GUIDE_BUTTON_INDEXES` in `modules/joystick_manager.py`; start the launcher with `TVL_DEBUG_BUTTONS=1` to print button indexes. Turn off Windows' "Open Xbox Game Bar using this button on a controller" setting so the overlay does not also open.
-
----
-
-# TV Launcher
-
-A sleek, console-style application launcher for Windows and Linux with gamepad support, automatic image fetching, and powerful organization features.
+**A console-style TV launcher for Windows. Run your PC from the couch with a remote, a controller or a keyboard: no mouse needed.**
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Platform">
-  <img src="https://img.shields.io/badge/Python-3.8+-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python">
+  <img src="https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Platform">
+  <img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python">
   <img src="https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge" alt="License">
 </p>
 
+Vibe Launcher TV turns a Windows PC (a NUC, a mini PC, a home-theater box) into a smart-TV style device: a full-screen app carousel that boots straight into your apps, works with a controller or TV remote, and can put the PC to sleep with one button.
 
-<img width="1920" height="1080" alt="Screenshot (485)" src="https://github.com/user-attachments/assets/6cb447d9-5c21-4beb-9f15-e8aa3d2a13e9" />
+It is built on **[TV Launcher by Darkvinx88](https://github.com/Darkvinx88/TvLauncher)** (MIT license) and adds fixes aimed at living-room use. See [Credits](#credits).
 
+## What's new in this version
 
+| | |
+|---|---|
+| **App icons that always show** | Apps that only have an `.exe` (for example VacuumTube) get a card built from the program's own icon, instead of an empty box. Real cover art is still used when you have it. |
+| **No "quit to desktop"** | Back / `Esc` / `B` on the home screen no longer asks to quit, and the ✕ button is gone from the power bar. Choose between doing nothing and sleeping with `HOME_BACK_ACTION`. |
+| **Gamepad works in every dialog** | D-pad, `A` and `B` now work in the Restart / Shutdown / Sleep confirmations and in the other confirm and info dialogs. |
+| **Sleep is really sleep** | The old command hibernated whenever Windows hibernation was on. Sleep now calls the Windows API directly and never hibernates. |
+| **Guide / Home button** | The Xbox Guide button (and, with one setting, the PlayStation button) jumps to the power bar or sleeps the PC. `GUIDE_ACTION` picks which. |
+| **Quiet start for TV boot** | `VibeLauncher-Silent.bat` starts the launcher with no console window. |
 
-
+The full list is in the [changelog](CHANGELOG.md).
 
 ## Features
 
-- **Full-screen TV-Mode** - Console-style carousel with smooth animations
-- **System Menu** - Press `S` or `Start` button to access the system Menu
-- **Responsive Scaling** - Automatically adapts to any screen resolution (from 720p to 4K+)
-- **Gamepad Support** - Navigate with Xbox/PlayStation controllers or keyboard/Bluetooth TV Remotes
-- **Mouse/Touch Support** - Navigate with mouse or touch controls
-- **Automatic Image Downloads** - Fetches 16:9 cover art from SteamGridDB
-- **Smart Program Scanner** - Automatically detects installed applications with proper icon extraction
-- **Quick Search Widget** - Instant app filtering with `F/LB`
-- **Drag & Drop Reordering** - Reorganize apps with `R/RB`
-- **System Controls** - Built-in Restart/Shutdown/Sleep options
-- **Customizable Controls** - Remap any keyboard key or remote button to your liking
-- **Parental Control System** - Lock the Launcher with a PIN code
-- **Streaming Video Wallpapers** - Projectivy Overflight-style animated backgrounds, streamed directly (no permanent download)
-- **Movable Launcher Layout** - The carousel can now be shifted vertically to leave room for video wallpapers 
-- **Auto-hiding Bottom Bar** - The system button bar (Restart/Sleep/Shutdown/Close) stays hidden off-screen at rest and slides in only when you navigate down to it
+- Full-screen carousel with smooth animations, scaling from 720p to 4K
+- Gamepad (Xbox / PlayStation), keyboard, Bluetooth TV remote, mouse and touch
+- Remap any key or remote button in **Settings → Advanced → Key Remapper**
+- Program scanner that finds installed apps and their icons
+- Categories, quick search (`F` / `LB`) and drag-and-drop reordering (`R` / `RB`)
+- Automatic 16:9 cover art from SteamGridDB (optional, needs a free API key)
+- Streaming video wallpapers (Projectivy Overflight style)
+- PIN parental control, backup and restore of your settings
+- Restart / Shutdown / Sleep from the on-screen power bar
 
-## Screenshots
+<!-- Add screenshots here, for example: ![Home screen](docs/screenshots/home.png) -->
 
-<img width="1920" height="1080" alt="Screenshot (483)" src="https://github.com/user-attachments/assets/a5acace8-5ab7-462a-9584-a9f6db3cad33" />
+## Install (Windows)
 
-*System Menu*
+1. Install [Python 3.10 or newer](https://www.python.org/downloads/) and tick **Add Python to PATH**.
+2. Download this repository (**Code → Download ZIP**) and extract it, for example to `C:\VibeLauncherTV`.
+3. Run `installer.bat` once. It creates a virtual environment and installs the dependencies.
+4. Start the launcher with `TVLauncher.bat`. It keeps a console window open, which is useful for seeing errors.
 
-<img width="1920" height="1080" alt="Screenshot (484)" src="https://github.com/user-attachments/assets/ba0fcca7-3907-4a26-b752-a46fb4449818" />
-
-*Key Mapper*
-
-<img width="1920" height="1080" alt="Screenshot (482)" src="https://github.com/user-attachments/assets/ca9dfbfb-8171-4063-af7c-07a1e82787f0" />
-
-*Parental Control*
-
-https://github.com/user-attachments/assets/c06e22da-7dd1-4599-bb2a-81425312517c
-
-*In motion*
-
-
-
-### Input Support
-- **Gamepad Compatible** - Xbox, PlayStation, or any standard controller
-- **Keyboard Navigation** - Full keyboard support
-- **TV Remote Support** - Works with Bluetooth TV remotes
-- **Fully Customizable** - Remap any key or button in Settings → Key Remapper
-- **Auto-detection** - Automatically detects connected gamepads with visual notifications
-
-### Smart Organization
-- **Category System** 
-  - Organize apps into categories (Games, Media, Programs, Other)
-  - Press Up/D-Pad Up to open category selector
-  - Navigate categories with Left/Right or D-Pad
-  - Quick category assignment with C (keyboard) or X/Square (controller)
-
-
-- **Category Manager** - Customize categories in Settings
-   - Add, edit, or delete categories
-   - Choose custom icons and colors
-   - Select the default category shown on launch
-- **Quick Search** - Press `F` or `LB` to instantly search your apps
-  - Live filtering as you type
-  - Alphabetically sorted results
-  - Keyboard and gamepad support
-- **Drag & Drop Reordering** - Press `R` or `RB` to rearrange apps
-  - Press `Enter`/`A` to activate reorder mode
-  - Visual position indicators
-  - Supports both linear and circular navigation
-- **Smart Program Scanner** - Automatically detects installed applications
-  - Cached results for instant loading
-  - Proper icon extraction from executables
-  - Alphabetically sorted display
-- **Edit & Delete** - Manage your app library easily
-
-### Automatic Image Management
-- **SteamGridDB Integration** - Auto-downloads 16:9 cover art
-- **Manual Download Button** - Download covers for existing apps at any time
-- **Smart Auto-download Logic** - Automatically fetches images when adding apps
-- **Local Image Support** - Use your own custom images
-  
-## Video Wallpapers
-
-TV Launcher supports animated, streaming video wallpapers in the style of Projectivy Overflight.
-- **Source:** Videos are streamed from the official Projectivy Overflight JSON catalogue (a custom catalogue URL can also be set)
-- **No permanent download:** videos are streamed live, requires an active internet connection
-- **Configurable via dialog:** Settings → Video Wallpaper lets you set:
-  - Video quality (1080p, 1080p HDR, 4K, 4K HDR, or automatic/adaptive)
-  - Rotation interval (change video every N minutes)
-  - Mute/audio toggle
-  - Category filters (leave empty to include all categories)
-  - Custom catalogue URL, with a one-click "restore default" option
-  - Catalogue refresh and link validation, plus a "Test/Try video" button to preview instantly
-- **Vertical layout shift:** with video wallpapers enabled, the launcher carousel can be moved vertically to leave clean space for the video, similar to Projectivy Launcher on Android TV
-- **Auto-hiding button bar:** the system button bar (Restart/Sleep/Shutdown/Close) stays hidden at rest and slides into view only when navigated to, maximizing the visible video area
-
-### System Controls
-- **Settings Menu** Comprehensive configuration panel with:
-   - Visual toggles for all settings
-   - Backup/Restore configuration
-   - Soft Reset (keeps apps) vs Full Reset options
-   - Direct GitHub update checker
-   - Category Manager for organizing apps
-- **Quick Actions** - Restart, Sleep, Shutdown, or Close launcher
-
-
-### New in Version 1.4.2
-
-- **Fixed**
-
-  - **Category Rename/Delete Not Updating Apps**
-     - Renaming a category no longer leaves apps pointing at the old name — every app tagged with it is now automatically re-pointed to the new name
-     - Deleting a category now actually moves its apps to "Other" as the confirmation dialog promises, instead of leaving them stuck under a category that no longer exists
-  - **Key Mappings Backup/Restore/Reset Using Wrong File**
-     - Backup (export), Restore (import), and "Reset to Defaults" now all read/write the same key mappings file the running Key Remapper actually uses
-     - Previously these three features reconstructed the file path independently and could silently target a different file than the live one (since the launcher changes its working directory to its install folder at startup), making restores appear to succeed while key mappings stayed unchanged, and resets appear to do nothing
-  - Removed a broken, unused code path in the Category Manager that referenced a function which didn't exist, and a similar leftover reference in the gamepad reorder-mode handler 
-  - Applies to both Windows and Linux builds
-
-           
-## Requirements
-
-- **Operating System:** Windows 10/11 or Linux (Ubuntu 20.04+, Fedora, Arch, etc.)
-- **Python:** 3.8 or higher
-- Video wallpapers rely on `libmpv` for playback.
-
-- **Windows:** `libmpv` (`mpv-2.dll`) is already bundled with the app — no setup needed.
-- **Linux:** `libmpv` must be installed at the system level (it's a native library, not a pip package). The installer (`installer.sh`) checks for it automatically and installs it via your package manager:
-```bash
-  # Debian/Ubuntu/Mint
-  sudo apt install libmpv2   # or libmpv1 on older versions
-
-  # Fedora
-  sudo dnf install mpv-libs
-
-  # Arch
-  sudo pacman -S mpv
-```
-  If you're not using the installer, you'll need to install it manually with one of the commands above.
-
-> ⚠️ Performance depends on your GPU's hardware video decode support (especially for HEVC/HDR content). Older hardware without HEVC decode acceleration may experience choppy playback in software decode mode.
-
-### Dependencies
-- `PyQt6` - UI framework
-- `psutil` - Process management
-- `pygame` - Gamepad support
-- `requests`- Automatic image downloads
-- `pycaw`   (Windows only) - Windows core audio control
-- `pywin32` (Windows only) - Shortcut scanning and icon extraction
-- `python-mpv` - Video wallpaper playback (requires `libmpv` installed at system level on Linux; bundled on Windows)
-
-
-## Installation
-
-### 1. Clone the Repository (branch 1 for Windows,branch 2 for Linux)
-```bash
-git clone https://github.com/Darkvinx88/TvLauncher.git
-cd TvLauncher
-```
- 
-### 2. Create Virtual Environment and Install Dependencies
-
-**Windows:**
-```bash
-#Create Virtual environment:
-python -m venv venv
-
-#Activate Virtual environment:
-venv\Scripts\activate
-
-#Install dependencies:
-pip install -r requirements.txt
-
-#Run the launcher
-python TvLauncher_Windows.py
-
-#Alternatively you can just run the installer.bat and let it do everything for you
-#(creates a virtual environment,activates it,installs dependencies)
-#Once everything is installed simply run the launcher with the given TVLauncher.bat file
-#it will automatically activate the virtual environment and run the launcher with 1 click
-
-
-```
-
-**Linux:**
-```bash
-
-# Create virtual environment:
-python3 -m venv venv
-
-# Activate virtual environment:
-source venv/bin/activate
-
-# Install dependencies:
-pip install -r requirements.txt
-
-# Run the launcher 
-python3 TvLauncher_Linux.py
-
-#Alternatively you can just run the Installer.sh and let it do everything for you
-#(creates a virtual environment,activates it,installs dependencies)
-#Once everything is installed simply run the launcher with the given Launcher.sh file
-#it will automatically activate the virtual environment and run the launcher with 1 click
-
-#sh files are already executable but if they are not just do
-chmod +x installer.sh
-./installer.sh
-
-chmod +x launcher.sh
-./launcher.sh
-
-#you can also edit the given .desktop so you are able to run the launcher no matter where it is placed.
-
-```
-
-## Windows Portable Mode
-The Windows version is fully portable - simply press the .exe to start the launcher. You can move the entire folder anywhere.
-
-## Linux Portable Mode
-This version includes everything needed:
-- Python runtime
-- Environment and launcher.sh have launching permissions already baked in
-- All Python packages (PyQt6, pygame, requests, etc.)
-- Qt6 with XCB/Wayland support (if in trouble sudo apt install libxcb)
-
-Just extract and run:
-```bash
-# Extract
-TVLauncher Linux v1.2 Portable.tar.gz
-
-# Run
-./launcher.sh
-
-or edit the .desktop file
-```
+Your apps and settings are stored in `%APPDATA%\TVLauncher`, outside the program folder, so they survive updates.
 
 ## Controls
 
-### Default Keyboard Controls
-| Key | Action |
-|-----|--------|
-| `←` `→` | Navigate carousel |
-| `↑` `↓` | Navigate menus / system controls |
-| `Enter` | Launch app |
-| `F` | Open Quick Search |
-| `R` | Toggle Reorder Mode |
-| `S` | Open Settings Menu |
-| `E` | Edit current app |
-| `C` | Quick Category Assignment |
-| `Delete` | Remove current app |
-| `Tab` | Switch search mode (when searching) |
-| `Esc` | Exit launcher / Cancel / Close search |
+| Keyboard | Action |
+|---|---|
+| `←` `→` | Move through the carousel |
+| `↑` `↓` | Open categories / go to the power bar |
+| `Enter` | Launch the selected app |
+| `F` | Quick search |
+| `R` | Reorder mode |
+| `S` | Settings menu |
+| `E` | Edit the selected app |
+| `C` | Assign a category |
+| `Delete` | Remove the selected app |
+| `Esc` | Back / cancel (does nothing on the home screen, see below) |
+| `Ctrl` `Shift` `Q` | Close the launcher (keyboard only) |
 
-### Default Gamepad Controls
-| Button | Action |
-|--------|--------|
-| `D-Pad / Left Stick` | Navigate |
-| `D-Pad Up` | Open category selector |
-| `A/Cross` | Launch app / Confirm |
-| `B/Circle` | Back / Cancel |
-| `X/Square` | Quick Category editor |
-| `Y/Triangle` | Delete app |
-| `LB/L1` | Open Quick Search |
-| `RB/R1` | Toggle Reorder Mode |
-| `start` | Open Settings Menu |
-| `LT\L2+Dpad ↑/↓` | Volume up/down |
+| Gamepad | Action |
+|---|---|
+| D-pad / left stick | Navigate |
+| `A` / Cross | Launch / confirm |
+| `B` / Circle | Back / cancel |
+| `X` / Square | Quick category editor |
+| `Y` / Triangle | Delete app |
+| `LB` / `RB` | Quick search / reorder mode |
+| `Start` | Settings menu |
+| `LT` + D-pad up/down | Volume |
+| **Guide / Home** | Jump to the power bar (press again to leave), or sleep, depending on `GUIDE_ACTION` |
 
+## Make it a TV box
 
+1. **Start at boot.** Press `Win` + `R`, type `shell:startup`, and put a shortcut to `VibeLauncher-Silent.bat` in that folder.
+2. **Sign in automatically.** Run `netplwiz` and untick *Users must enter a user name and password*. If the option is missing on Windows 11, turn off *Settings → Accounts → Sign-in options → For improved security, only allow Windows Hello sign-in*.
+3. **Stop Windows grabbing the Guide button.** Turn off *Settings → Gaming → Xbox Game Bar → Open Xbox Game Bar using this button on a controller*.
+4. **Let the controller or remote wake the PC.** In Device Manager, open the device's *Power Management* tab and allow it to wake the computer.
+5. **Keep updates out of movie night.** Set *Active hours* in Windows Update settings.
+6. **Optional: remove hibernation.** Run `powercfg -h off` in an administrator terminal. Sleep never hibernates in this launcher, but this also removes Hibernate from Windows' own menus (and turns off Fast Startup).
 
+## Settings you can change
 
-**Customizing Controls**
-All controls can be remapped! Here's how:
- - Open Settings - Press S or Start button
- - Navigate to Advanced section
- - Select "🎮 Key Remapper"
- - Choose an action to remap
- - Press "Change" button
- - Press any key or button on your remote/keyboard
- - Confirm or cancel
- - Save and Close when done
- - Works with any keyboard key or TV remote button
+| Setting | Where | Values |
+|---|---|---|
+| `HOME_BACK_ACTION` | top of `TvLauncher_Windows.py` | `"none"` (default) or `"sleep"` |
+| `GUIDE_ACTION` | top of `TvLauncher_Windows.py` | `"power_bar"` (default), `"sleep_confirm"` or `"sleep_now"` |
+| `GUIDE_BUTTON_INDEXES` | `modules/joystick_manager.py` | Button numbers for a PlayStation or other pad, for example `(12,)` |
+| `GITHUB_OWNER`, `GITHUB_REPO` | `modules/update_notification.py` | Your repository. While empty, the update check is off. |
 
-## Quick Start Guide
+Careful with `HOME_BACK_ACTION = "sleep"`: one extra press of `B` after backing out of a menu will put the PC to sleep.
 
-### First Time Setup
-1. Open settings Menu with `s`  or `start`
-   
-2. **Set Up SteamGridDB (Recommended)**
-   - Click "API Key"
-   - Get a free API key from [SteamGridDB](https://www.steamgriddb.com/profile/preferences/api)
-   - Paste it in the dialog
-   - The launcher will now auto-download 16:9 cover art
-     
-3. **Scan Installed Programs**
-   - Click "Scan Programs" 
-   - Wait for the scan to complete (may take a minute on first run)
-   - Results are cached for instant loading next time
-   - Select programs to add
-   - Click "Add Selected"
-   - Images download automatically in background
-  
-4. **Add App Manually**
-   - Click "Add app"
-   - Browse for the executable
-   - Optionally add a custom image
-   - Click "Add"
+## Troubleshooting
 
-5. **Download Covers for Existing Apps**
-   - Click "Download Covers" 
-   - Covers download automatically from SteamGridDB
+**The Guide button does nothing.**
+Xbox controllers are read through XInput and should work after you turn off the Game Bar controller shortcut (see above). For a PlayStation pad, find its button number: open Command Prompt in the program folder, run `set TVL_DEBUG_BUTTONS=1`, then `TVLauncher.bat`, press the PS button and read `[joystick] button index N pressed`. Put `N` into `GUIDE_BUTTON_INDEXES`.
 
-6. **Customize Background**
-   - Click "Set Background"
-   - Select an image file (16:9 recommended)
-   - Background updates immediately
-  
-7. **Auto change Wallpapers (Optional)**
-   - Place your image files in the wallpaper folder
-   - Go to settings and activate the Auto change wallpapers
-   - Now every 5 minutes your wallpapers will change in a random rotation
-     
-8. **Setup Weather Widget (Optional)**
-   - Press `S` to open Settings
-   - Navigate to Weather Settings
-   - Type your city and optional nation code (IT,GB,US etc)
-   - Click Save and Apply
-   - Weather Widget will be on top righ corner (it may take 1 second to fetch weather data)
-     
-9. **Customize Controls (Optional)**
-   - Press `S` to open Settings
-   - Navigate to "🎮 Key Remapper"
-   - Remap any key to your preference
-   - Changes apply instantly
-          
-   
-### Using Categories
+**An app tile shows a generic icon.**
+Some apps start through an updater stub (for example `Update.exe --processStart ...`), so Windows only has the stub's icon. Open **Edit App** and pick a PNG or JPG as the image.
 
-1. Press `↑ (keyboard)` or `D-Pad Up` (gamepad) to open category selector
-2. Use `←/→` or `D-Pad Left/Right` to switch between categories
-3. Press `↓` or `D-Pad Down` to close and view filtered apps
-4. Press `C` or `X/Square` on any app to quickly assign a category
+**The controller isn't detected.**
+Connect it before starting the launcher. It rescans every few seconds and shows a notification when a pad appears.
 
-### Managing Categories:
+**Covers don't download.**
+Check the SteamGridDB API key and the internet connection, then use the manual download button.
 
-1. Open Settings (`S` or `Start`)
-2. Select "Manage Categories"
-3. Add, edit, or delete categories
-4. Customize icons and colors
-5. Select your preferred category
-6. click on the green checkmark and save
-7. at launch the selected category will be the first to be shown
- 
-### Using Quick Search
+**I can't get out of the launcher.**
+Press `Ctrl` `Shift` `Q` on a keyboard, or end the task in Task Manager.
 
-1. Press `F` (keyboard) or `LB` (gamepad) anywhere
-2. Start typing to filter apps (Typing Mode)
-3. Use `↑`/`↓` or D-Pad to navigate results (auto-switches to Navigation Mode)
-4. Press `Tab` or `X` to manually switch modes
-5. Press `Enter` or `A` to launch selected app
-6. Press `Esc` or `B` to close search
+More background on the original features is in the [upstream README](docs/UPSTREAM_README.md).
 
-### Reordering Apps
+## Project layout
 
-**Quick Toggle Method:**
-1. Press `R` (keyboard) or `RB` (gamepad)
-2. Use `←`/`→` to move the app to desired position
-3. Press `Enter`/`A` to confirm or `Esc`/`B` to cancel
-
-**Features:**
-- Gold border shows selected app
-- Blue border shows target position
-- Position numbers appear on each tile
-- Works with both linear (≤5 apps) and circular (>5 apps) modes
-- Instructions overlay appears when active
-
-## Autostart Setup
-
-The Launcher can start at boot on both Windows and Linux
-
-### Windows Autostart
-
-**Method 1: Startup Folder (Recommended)**
-1. Press `Win + R` to open Run dialog
-2. Type `shell:startup` and press Enter
-3. Right-click your launcher `.bat` or `.exe` file → Create shortcut
-4. Drag the shortcut into the Startup folder
-5. Launcher will start automatically after login
-
-💡 **Tip:** Right-click shortcut → Properties → Set Run: `Minimized` to hide console window.
-
-**Method 2: Windows Registry**
-1. Create a file named `TVLauncher_Autostart.reg`
-2. Paste the following content:
-```reg
-Windows Registry Editor Version 5.00
-
-[HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run]
-"TVLauncher"="\"C:\\path\\to\\launch.bat\""
 ```
-3. Replace `C:\\path\\to\\launch.bat` with your actual path
-4. Double-click the `.reg` file to add the registry entry
-5. Launcher will start automatically on every boot
-
-### Linux Autostart
-
-Works with any desktop environment (XFCE, GNOME, KDE, Cinnamon, MATE, etc.)
-
-1. **Create autostart directory:**
-```bash
-mkdir -p ~/.config/autostart
+TvLauncher_Windows.py      the application
+modules/                   carousel, gamepad, settings, scanner, wallpapers, dialogs
+assets/                    sounds, icons, wallpapers
+installer.bat              creates the virtual environment and installs dependencies
+TVLauncher.bat             start with a console window (shows errors)
+VibeLauncher-Silent.bat    start without a console window (use for autostart)
+docs/UPSTREAM_README.md    the original TV Launcher README
+CHANGELOG.md               what changed
 ```
 
-2. **Create autostart file:**
-```bash
-nano ~/.config/autostart/TVLauncher.desktop
-```
+## Credits
 
-3. **Add this content:**
-```ini
-[Desktop Entry]
-Type=Application
-Name=TVLauncher
-Comment=Automatically start the TV Launcher on login
-Exec=/path/to/venv/bin/python /path/to/TvLauncher_Linux.py
-Path=/path/to/
-Terminal=false
-X-GNOME-Autostart-enabled=true
-```
-*Replace `/path/to/` with actual directory*
+Vibe Launcher TV is based on **[TV Launcher](https://github.com/Darkvinx88/TvLauncher) by Darkvinx88**, which provides the carousel, settings, scanner, wallpapers and most of the code. If you like it, please star the original project or [support its author](https://ko-fi.com/darkvinx88).
 
-4. **Make executable:**
-```bash
-chmod +x ~/.config/autostart/TVLauncher.desktop
-```
+## License
 
-Launcher will now start automatically on login.
-
-## Configuration
-
-Configuration files `launcher_apps.json, key_mappings.json, scanner_cache.json` and tile images are now stored in the user folder `%APPDATA%\Roaming\TVLauncher` on  
-Windows and  `~/.config/TVLauncher` on Linux, keeping user data separate from the application files and ensuring it survives updates.
-A shortcut to these folders is accessible using the given button in the settings menu.
-
-## Updating
-
-The launcher now checks for updates on startup and shows a notification in the bottom right corner which leads to the releases page of this repo.
-A persistent banner will also be present in the settings menu if an update is available and disappears when the update is done.
-
-
-
-## 🛠️ Troubleshooting
-
-### Gamepad Not Detected
-- Ensure `pygame` is installed: `pip install pygame`
-- Connect gamepad before launching
-- Launcher auto-detects gamepads every 5 seconds
-- Controller connection notifications appear when detected (Windows)
-- **Linux:** Ensure user has permission to access `/dev/input/`:
-  ```bash
-  sudo usermod -a -G input $USER
-  # Log out and back in
-  ```
-### Video Wallpaper Not Working / mpv not available:
-```bash
-sudo apt install libmpv2   # or libmpv1 on older Ubuntu/Mint versions
-sudo dnf install mpv-libs  # Fedora
-sudo pacman -S mpv         # Arch
-```
-Check the console for the specific error shown in the Video Wallpaper dialog status label — it usually indicates the missing library directly.
-
-### Images Not Downloading
-- Verify `requests` is installed: `pip install requests`
-- Check SteamGridDB API key is valid
-- Ensure internet connection is active
-- Try the manual download button (⬇️ icon) for existing apps
-- Images download in background thread (check console for errors)
-
-### App Won't Launch
-- Verify executable path is correct
-- Check file permissions
-- **Windows:** Try running as administrator
-- **Linux:** Ensure binary has execute permissions (`chmod +x`)
-
-### Key Remapper Issues
-- If remapped keys don't work, try restarting the launcher
-- Check `key_mappings.json` file exists
-- Use "Reset to Defaults" in Key Remapper if needed
-- Key mappings are automatically included in configuration backups
-
-### Program Scanner Issues
-- First scan may take 1-2 minutes
-- Results are cached in `scanner_cache_*.json`
-- Click refresh button (↻) to force rescan
-- **Windows:** Ensure `pywin32` is installed for icon extraction
-
-### Scaling Issues
-- Launcher auto-scales to your resolution
-- Base resolution: 1920x1080
-- All UI elements scale proportionally
-
-### Linux-Specific Issues
-
-**Missing Qt Platform Plugin:**
-```bash
-# Ubuntu/Debian:
-sudo apt-get install qt6-qpa-plugins
-
-# Fedora:
-sudo dnf install qt6-qtbase-gui
-```
-
-**Missing Qt Multimedia (Sound Effects Not Working):**
-If the launcher won't start or sound effects don't work, you may need Qt Multimedia packages:
-```bash
-# Debian / Ubuntu / Mint:
-sudo apt install python3-pyqt6.qtmultimedia
-
-# Fedora:
-sudo dnf install python3-qt6-qtmultimedia
-
-# Arch:
-sudo pacman -S python-pyqt6-multimedia
-```
-
-**Permission Denied:**
-```bash
-chmod +x TvLauncher_Linux.py
-```
-
-## 📝 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Acknowledgments
-
-- [SteamGridDB](https://www.steamgriddb.com/) - For providing game artwork API
-- [PyQt6](https://www.riverbankcomputing.com/software/pyqt/) - For the UI framework
-- [pygame](https://www.pygame.org/) - For gamepad support
-- [Projectivy Launcher](https://github.com/spocky/miproja1) - Inspiration for the vertical layout and video wallpaper concept
-- [Overflight](https://github.com/spocky/projectivy-plugin-wallpaper-overflight) - For the video wallpaper catalogue this feature streams from
-- [mpv](https://mpv.io/) / [libmpv](https://github.com/mpv-player/mpv) - Powers video wallpaper playback.
-- The bundled `mpv-2.dll` (Windows) is distributed under the **LGPLv2.1+** license; 
-- Community contributors and testers
-
-## Known Issues
-
-- **Windows:** Some executables may need administrator privileges
-- **All:** Background images should be high resolution (1920x1080+) for best results
-
-
-## 📧 Contact
-
-For issues, questions, or suggestions, please open an issue on GitHub.
-
----
-
-⭐ **Star this repo if you find it useful!**
-
-Made with ❤️ by Darkvinx88 
-<p align="center">
-  <a href='https://ko-fi.com/W7W41RFDX2' target='_blank'>
-    <img height='36' style='border:0px;height:36px;' src='https://storage.ko-fi.com/cdn/kofi6.png?v=6' border='0' alt='Buy Me a Coffee at ko-fi.com' />
-  </a>
-</p>
+MIT. `LICENSE` keeps the original copyright notice and adds one for the changes in this version.

@@ -1,6 +1,6 @@
 @echo off
 echo ================================
-echo    TV Launcher - Installer
+echo    Vibe Launcher TV - Installer
 echo ================================
 echo.
 

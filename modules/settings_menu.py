@@ -1416,7 +1416,8 @@ class SettingsMenu(QWidget):
         version_label.setStyleSheet(f"color: white; font-size: {self.scaling.scale_font(13)}px;")
         info_layout.addWidget(version_label)
   
-        author_label = QLabel("Made with ❤️ by Darkvinx88")
+        author_label = QLabel("Based on TV Launcher by Darkvinx88")
+        author_label.setWordWrap(True)
         author_label.setStyleSheet(f"color: #aaa; font-size: {self.scaling.scale_font(12)}px;")
         info_layout.addWidget(author_label)
         
@@ -1458,10 +1459,18 @@ class SettingsMenu(QWidget):
         self.close_menu()
         QTimer.singleShot(350, self.launcher.set_background)
 
+    def _project_url(self):
+        """This project's GitHub page: the repository set in update_notification.py,
+        or the original TV Launcher page until one is configured."""
+        from modules.update_notification import GITHUB_OWNER, GITHUB_REPO
+        if GITHUB_OWNER and GITHUB_REPO:
+            return f"https://github.com/{GITHUB_OWNER}/{GITHUB_REPO}"
+        return "https://github.com/Darkvinx88/TvLauncher"
+
     def _open_github(self):
         """Apre la pagina GitHub del progetto"""
         import webbrowser
-        github_url = "https://github.com/Darkvinx88/TvLauncher"
+        github_url = self._project_url()
         
         try:
             webbrowser.open(github_url)
@@ -1480,7 +1489,7 @@ class SettingsMenu(QWidget):
         from PyQt6.QtCore import QUrl
         from PyQt6.QtGui import QDesktopServices
         url = getattr(self, '_update_release_url',
-                      "https://github.com/Darkvinx88/TvLauncher/releases/latest")
+                      self._project_url() + "/releases/latest")
         QDesktopServices.openUrl(QUrl(url))
 
     def _refresh_update_button(self, launcher):

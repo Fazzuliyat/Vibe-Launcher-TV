@@ -18,13 +18,17 @@ from PyQt6.QtGui import QColor, QDesktopServices
 # Versione corrente 
 
 
-LAUNCHER_VERSION = "1.4.2"
+LAUNCHER_VERSION = "1.5.0"
 
 
 #  Costanti GitHub 
 
-GITHUB_OWNER = "Darkvinx88"
-GITHUB_REPO  = "TvLauncher"
+# Where the "update available" check looks for new releases.
+# Set both to your own repository, e.g. GITHUB_OWNER = "yourname" and
+# GITHUB_REPO = "Vibe-Launcher-TV". While either is empty the check is switched off
+# (it must not point at the upstream project: its releases do not contain these changes).
+GITHUB_OWNER = ""
+GITHUB_REPO  = ""
 RELEASES_API = (
     f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/releases/latest"
 )
@@ -398,6 +402,9 @@ _patch_joystick_notification()
 
 def check_for_updates(parent, scaling=None):
    
+    if not (GITHUB_OWNER and GITHUB_REPO):
+        return   # update check disabled until a repository is configured
+
     current_version = LAUNCHER_VERSION
     worker = _UpdateCheckWorker(current_version)
 
