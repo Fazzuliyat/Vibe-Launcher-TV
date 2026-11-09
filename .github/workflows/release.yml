@@ -1,0 +1,58 @@
+name: Release
+
+# Runs when a version tag such as v1.5.1 is pushed, and builds the downloads:
+#   - source .zip and .tar.gz
+#   - experimental Windows build (.exe, no Python needed) as a .zip
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Source packages
+        shell: bash
+        run: |
+          NAME="Vibe-Launcher-TV-${GITHUB_REF_NAME}"
+          git archive --format=zip    --prefix="$NAME/" -o "$NAME-source.zip"    HEAD
+          git archive --format=tar.gz --prefix="$NAME/" -o "$NAME-source.tar.gz" HEAD
+
+      - name: Release notes from CHANGELOG.md
+        shell: bash
+        run: |
+          VER="${GITHUB_REF_NAME#v}"
+          awk -v v="$VER" '$0 ~ "^## "v" " {f=1; next} /^## / {f=0} f' CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then echo "See CHANGELOG.md." > notes.md; fi
+          cat >> notes.md <<'TXT'
+
+          ### Downloads
+          - **Source (.zip / .tar.gz):** needs Python 3.10+, run `installer.bat` once, then `TVLauncher.bat`.
+          - **Windows build (`-windows-exe.zip`, experimental):** unzip and run `VibeLauncherTV.exe`, no Python needed. If it does not start, use the source download.
+          Based on TV Launcher by Darkvinx88 (MIT).
+          TXT
+
+      - name: Build Windows exe (experimental)
+        shell: bash
+        continue-on-error: true
+        run: |
+          pip install -r requirements.txt pyinstaller
+          pyinstaller --noconfirm --windowed --name VibeLauncherTV --collect-submodules modules TvLauncher_Windows.py
+          cp -r assets dist/VibeLauncherTV/assets
+          cd dist && 7z a "../Vibe-Launcher-TV-${GITHUB_REF_NAME}-windows-exe.zip" VibeLauncherTV
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Vibe Launcher TV ${{ github.ref_name }}
+          body_path: notes.md
+          files: Vibe-Launcher-TV-*
