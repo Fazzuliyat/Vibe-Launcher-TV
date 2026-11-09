@@ -159,6 +159,8 @@ class _MpvGLWidget(QOpenGLWidget):
         super().__init__(parent)
         self._mpv = mpv_instance
         self._render_ctx = None
+        self._init_failed = False
+        self._init_error = None
         self.setAttribute(Qt.WidgetAttribute.WA_AlwaysStackOnTop, False)
         self.setUpdateBehavior(QOpenGLWidget.UpdateBehavior.NoPartialUpdate)
 
@@ -184,24 +186,36 @@ class _MpvGLWidget(QOpenGLWidget):
         return int(addr) if addr else 0
 
     def initializeGL(self):
-        import mpv as mpv_module
-        # get_proc_address deve essere un vero ctypes CFUNCTYPE (il tipo
-        # esposto da python-mpv come MpvGlGetProcAddressFn), non un metodo
-        # Python passato as-is: kwargs_to_render_param_array fa una
-        # conversione ctypes stretta e un metodo "nudo" fallisce con
-        # TypeError. Teniamo anche un riferimento esplicito (self._get_proc_address_c)
-        # perché altrimenti il garbage collector di Python può liberare il
-        # wrapper ctypes mentre libmpv lo sta ancora usando -> crash.
-        self._get_proc_address_c = mpv_module.MpvGlGetProcAddressFn(self._get_proc_address)
-        self._render_ctx = mpv_module.MpvRenderContext(
-            self._mpv, 'opengl',
-            opengl_init_params={'get_proc_address': self._get_proc_address_c}
-        )
-        # update_cb viene chiamato da mpv su un thread interno ogni volta che
-        # c'è un nuovo frame pronto: non tocchiamo la UI da lì direttamente
-        # (non è il thread Qt), emettiamo solo un segnale, thread-safe, che
-        # Qt marshalla sul thread principale per noi.
-        self._render_ctx.update_cb = self._on_frame_ready
+        # Never let an exception escape a Qt paint callback: PyQt6 aborts the
+        # whole application (qFatal) on unhandled errors inside C++ virtual
+        # re-implementations. Record the failure instead; _init_mpv_render_api
+        # checks self._init_failed right after show() and falls back to the
+        # legacy screenshot path.
+        self._init_failed = False
+        self._init_error = None
+        try:
+            import mpv as mpv_module
+            # get_proc_address deve essere un vero ctypes CFUNCTYPE (il tipo
+            # esposto da python-mpv come MpvGlGetProcAddressFn), non un metodo
+            # Python passato as-is: kwargs_to_render_param_array fa una
+            # conversione ctypes stretta e un metodo "nudo" fallisce con
+            # TypeError. Teniamo anche un riferimento esplicito (self._get_proc_address_c)
+            # perché altrimenti il garbage collector di Python può liberare il
+            # wrapper ctypes mentre libmpv lo sta ancora usando -> crash.
+            self._get_proc_address_c = mpv_module.MpvGlGetProcAddressFn(self._get_proc_address)
+            self._render_ctx = mpv_module.MpvRenderContext(
+                self._mpv, 'opengl',
+                opengl_init_params={'get_proc_address': self._get_proc_address_c}
+            )
+            # update_cb viene chiamato da mpv su un thread interno ogni volta che
+            # c'è un nuovo frame pronto: non tocchiamo la UI da lì direttamente
+            # (non è il thread Qt), emettiamo solo un segnale, thread-safe, che
+            # Qt marshalla sul thread principale per noi.
+            self._render_ctx.update_cb = self._on_frame_ready
+        except Exception as e:
+            self._init_failed = True
+            self._init_error = e
+            self._render_ctx = None
 
     def _on_frame_ready(self):
         self.frame_ready.emit()
@@ -451,6 +465,11 @@ class VideoWallpaperManager:
             if getattr(self, 'overlay', None):
                 self.video_label.stackUnder(self.overlay)
             self.video_label.show()  # forza initializeGL() -> crea il render context
+
+            # initializeGL runs from the C++ paint pipeline, so its exceptions
+            # never reach this try/except; the widget records them instead.
+            if getattr(self.video_label, '_init_failed', False):
+                raise RuntimeError(f"initializeGL fallita: {self.video_label._init_error}")
 
             if getattr(self.video_label, '_render_ctx', None) is None:
                 raise RuntimeError("MpvRenderContext non creato (initializeGL non chiamato o fallito)")

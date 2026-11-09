@@ -9,7 +9,6 @@ import ctypes
 from PyQt6.QtCore import QTimer, Qt, QCoreApplication
 from PyQt6.QtGui import QKeyEvent
 from PyQt6.QtWidgets import QApplication
-import pygame
 
 try:
     import pygame
@@ -715,10 +714,14 @@ class JoystickManager:
         x_axis = self.joystick.get_axis(0)
         y_axis = self.joystick.get_axis(1)
         hat = self.joystick.get_hat(0) if self.joystick.get_numhats() > 0 else (0, 0)
-        
-        dpad_left = self.joystick.get_button(13)
-        dpad_right = self.joystick.get_button(14)
-        dpad_down = self.joystick.get_button(12)
+
+        # D-pad button numbers vary by pad; asking for a button the pad does
+        # not have raises and floors the whole poll loop (spurious
+        # "Controller Disconnected"). Guard like every other handler does.
+        num_buttons = self.joystick.get_numbuttons()
+        dpad_left = self.joystick.get_button(13) if num_buttons > 13 else False
+        dpad_right = self.joystick.get_button(14) if num_buttons > 14 else False
+        dpad_down = self.joystick.get_button(12) if num_buttons > 12 else False
         
         # Gestisce LEFT/RIGHT per cambiare categoria
         current_state_x = (x_axis > self.axis_deadzone, x_axis < -self.axis_deadzone,

@@ -1114,7 +1114,12 @@ class CategoryEditorDialog(QDialog):
         ri-assegnate manualmente.
         """
         launcher = self.parent()
-        apps = getattr(launcher, 'apps', None)
+        # Iterate the authoritative list: with a category filter active,
+        # launcher.apps only holds the apps visible in that filter, so
+        # reassigning there leaves the rest orphaned and persists them orphaned.
+        apps = getattr(launcher, '_all_apps_backup', None)
+        if not apps:
+            apps = getattr(launcher, 'apps', None)
         if not apps:
             return
 

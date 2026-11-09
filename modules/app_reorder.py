@@ -87,6 +87,9 @@ class ReorderMode:
             self.is_active = True
             self.selected_index = self.launcher.current_index
             self.target_index = self.launcher.current_index
+            # Keep the launcher-level flag in sync: the joystick and keyboard
+            # guards check launcher.reorder_active, not this object's flag.
+            self.launcher.reorder_active = True
             self._show_reorder_ui()
             self._update_tile_highlights()
             print(f"🔄 Reorder mode activated - Selected: {self.launcher.apps[self.selected_index]['name']}")
@@ -297,16 +300,43 @@ class ReorderMode:
         self.recently_exited = True
         
         if self.selected_index != self.target_index:
-            # Perform the reorder
+            # Perform the reorder on the visible (possibly filtered) list
             app_to_move = self.launcher.apps.pop(self.selected_index)
             self.launcher.apps.insert(self.target_index, app_to_move)
-            
+
+            # Mirror the move on the authoritative backup list, which is what
+            # save_config() actually persists (it writes _all_apps_backup, not
+            # apps). Without this, a reorder made inside a filtered category
+            # evaporates on the next rebuild. The two lists share the same app
+            # dicts, so match by identity.
+            backup = getattr(self.launcher, '_all_apps_backup', None)
+            if backup:
+                backup_pos = next((i for i, a in enumerate(backup)
+                                   if a is app_to_move), -1)
+                if backup_pos >= 0:
+                    backup.pop(backup_pos)
+                    try:
+                        if self.target_index == 0 and len(self.launcher.apps) > 1:
+                            first_visible_after = self.launcher.apps[1]
+                            neighbor_pos = next(i for i, a in enumerate(backup)
+                                                if a is first_visible_after)
+                            backup.insert(neighbor_pos, app_to_move)
+                        elif self.target_index > 0:
+                            last_visible_before = self.launcher.apps[self.target_index - 1]
+                            neighbor_pos = next(i for i, a in enumerate(backup)
+                                                if a is last_visible_before)
+                            backup.insert(neighbor_pos + 1, app_to_move)
+                        else:
+                            backup.insert(0, app_to_move)
+                    except (StopIteration, IndexError):
+                        backup.append(app_to_move)
+
             # Update current index to follow the moved app
             self.launcher.current_index = self.target_index
-            
+
             # Save and rebuild
             self.launcher.save_config()
-            
+
             print(f"✅ Moved '{app_to_move['name']}' from position {self.selected_index} to {self.target_index}")
         
         self._exit_reorder()
@@ -336,6 +366,7 @@ class ReorderMode:
     def _exit_reorder(self):
         """Exits reorder mode and cleans up"""
         self.is_active = False
+        self.launcher.reorder_active = False
         self.selected_index = None
         self.target_index = None
         self._hide_reorder_ui()

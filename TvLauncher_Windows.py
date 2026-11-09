@@ -691,6 +691,11 @@ class TVLauncher(QMainWindow):
             print(f"[Startup] Downloaded {updated_count} cover(s). Refreshing carousel...")
             self.save_config()
             self.build_infinite_carousel()
+        # The custom finished signal can arrive before run() has returned.
+        # Destroying/nul-ing the reference while the thread is still running
+        # makes Qt abort ("QThread: Destroyed while thread is still running").
+        if self.cover_download_worker:
+            self.cover_download_worker.wait(2000)
         self.cover_download_worker = None
         self.setFocus()
         self.activateWindow()
@@ -1470,7 +1475,12 @@ class TVLauncher(QMainWindow):
             else "No new covers were downloaded."
         )
         self._make_info_dialog("Download Complete", msg_text).exec()
-        
+
+        # The custom finished signal can arrive before run() has returned;
+        # dropping the reference while the thread is still running makes Qt
+        # abort ("QThread: Destroyed while thread is still running").
+        if self.cover_download_worker:
+            self.cover_download_worker.wait(2000)
         self.cover_download_worker = None
         self.setFocus()
         self.activateWindow()
@@ -1840,6 +1850,10 @@ class TVLauncher(QMainWindow):
             last_tile.app_index = new_app_idx
             last_tile._normal_pixmap = None
             last_tile._focused_pixmap = None
+            # Recycled for a different app: forget its resolved artwork,
+            # otherwise the previous app's card keeps showing under the
+            # new app's name.
+            last_tile._resolved_icon = None
             last_tile.name_label.setText(self.apps[new_app_idx]['name'])
             last_tile.set_focused(False)
             start_x = self.scaling.scale(50)
@@ -1875,6 +1889,8 @@ class TVLauncher(QMainWindow):
             first_tile.app_index = new_app_idx
             first_tile._normal_pixmap = None
             first_tile._focused_pixmap = None
+            # Recycled for a different app: forget its resolved artwork
+            first_tile._resolved_icon = None
             first_tile.name_label.setText(self.apps[new_app_idx]['name'])
             first_tile.set_focused(False)
             self.tiles.append(first_tile)
@@ -1885,6 +1901,8 @@ class TVLauncher(QMainWindow):
             last_tile.app_index = new_app_idx
             last_tile._normal_pixmap = None
             last_tile._focused_pixmap = None
+            # Recycled for a different app: forget its resolved artwork
+            last_tile._resolved_icon = None
             last_tile.name_label.setText(self.apps[new_app_idx]['name'])
             last_tile.set_focused(False)
             
@@ -1933,7 +1951,13 @@ class TVLauncher(QMainWindow):
         }
         if isinstance(clean_app_data['icon'], QPixmap):
             clean_app_data['icon'] = app_data.get('path', '')
-        self.apps.append(clean_app_data)
+        # Persist into the authoritative backup list when a category filter is
+        # active: launcher.apps is then a fresh per-build copy, so saving to it
+        # alone would lose the app on the next rebuild.
+        if hasattr(self, '_all_apps_backup'):
+            self._all_apps_backup.append(clean_app_data)
+        else:
+            self.apps.append(clean_app_data)
         self.added_count += 1
     
     def _on_download_progress(self, message, percent):
@@ -1954,6 +1978,11 @@ class TVLauncher(QMainWindow):
             else:
                 self._make_info_dialog("Info", "No new program added (may be already present).").exec()
 
+        # The custom finished signal can arrive before run() has returned;
+        # dropping the reference while the thread is still running makes Qt
+        # abort ("QThread: Destroyed while thread is still running").
+        if self.download_worker:
+            self.download_worker.wait(2000)
         self.download_worker = None
         self.added_count = 0
         self.setFocus()
@@ -2004,7 +2033,19 @@ class TVLauncher(QMainWindow):
         if dialog.exec() == QDialog.DialogCode.Accepted:
             app_data = dialog.get_app_data()
             if app_data['name'] and app_data['path']:
-                self.apps[self.current_index] = app_data
+                # Update the authoritative backup entry in place: with a
+                # category filter active, launcher.apps is a per-build copy
+                # and save_config() persists _all_apps_backup, so replacing
+                # the visible entry would silently revert on the next rebuild.
+                current = self.apps[self.current_index]
+                backup = getattr(self, '_all_apps_backup', None)
+                target = None
+                if backup:
+                    target = next((a for a in backup if a is current), None)
+                if target is not None:
+                    target.update(app_data)
+                else:
+                    self.apps[self.current_index] = app_data
                 self.save_config()
                 self.build_infinite_carousel()
             else:
