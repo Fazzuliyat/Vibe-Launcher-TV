@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.5.1 - 2026-11-09
+
+### Changed
+- The power bar now reads **Sleep, Restart, Shutdown** (in that order) with the words on the buttons, so there is no doubt which one is Sleep. Down focuses Sleep first.
+- The sleep confirmation says "Sleep" instead of "Suspend".
+
+### Removed
+- The category bar that slid in when pressing Up (keyboard, gamepad and touch). The carousel always shows every app. Categories can still be assigned to apps in the editor; they are just not used for filtering. To bring the bar back, set `CATEGORY_SELECTOR_ENABLED = True` in `modules/category_manager.py`.
+
 ## 1.5.0 - 2026-11-08
 
 First release of **Vibe Launcher TV**, based on TV Launcher 1.4.2 by Darkvinx88.

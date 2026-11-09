@@ -6,6 +6,13 @@ from pathlib import Path
 import json
 
 
+# TV setup: the category bar that slid in when pressing Up on the home screen is
+# removed. While this is False nothing opens it (keyboard, gamepad, touch), the
+# widget stays hidden and the carousel always shows every app ("All").
+# Categories can still be assigned to apps; they are just not used for filtering.
+CATEGORY_SELECTOR_ENABLED = False
+
+
 class CategoryManager:
     """Gestisce le categorie e il filtro delle app"""
     
@@ -318,6 +325,11 @@ def integrate_categories(launcher):
     launcher.category_selector.category_changed.connect(launcher._on_category_changed)
     launcher.is_in_category_selector = False
     launcher._category_selector_blocking_input = False
+
+    if not CATEGORY_SELECTOR_ENABLED:
+        # No category bar: make sure the carousel is never stuck on a filtered view.
+        launcher.category_manager.current_category = 0
+        launcher.category_selector.hide()
     
     original_build = launcher.build_infinite_carousel
     
@@ -351,6 +363,8 @@ def integrate_categories(launcher):
 
 def add_category_navigation_to_keypressevent(launcher, event):
     """Aggiunge navigazione categorie via tastiera"""
+    if not CATEGORY_SELECTOR_ENABLED:
+        return False
     if not hasattr(launcher, 'category_selector'):
         return False
     
@@ -690,7 +704,8 @@ def add_category_joystick_support(launcher):
         return
     
     # Registra semplicemente il launcher - il JoystickManager gestirà tutto
-    launcher.joystick_manager.register_category_support(launcher)
+    if CATEGORY_SELECTOR_ENABLED:
+        launcher.joystick_manager.register_category_support(launcher)
     
 
 

@@ -31,7 +31,7 @@ The full list is in the [changelog](CHANGELOG.md).
 - Gamepad (Xbox / PlayStation), keyboard, Bluetooth TV remote, mouse and touch
 - Remap any key or remote button in **Settings → Advanced → Key Remapper**
 - Program scanner that finds installed apps and their icons
-- Categories, quick search (`F` / `LB`) and drag-and-drop reordering (`R` / `RB`)
+- Quick search (`F` / `LB`) and drag-and-drop reordering (`R` / `RB`)
 - Automatic 16:9 cover art from SteamGridDB (optional, needs a free API key)
 - Streaming video wallpapers (Projectivy Overflight style)
 - PIN parental control, backup and restore of your settings
@@ -53,7 +53,7 @@ Your apps and settings are stored in `%APPDATA%\TVLauncher`, outside the program
 | Keyboard | Action |
 |---|---|
 | `←` `→` | Move through the carousel |
-| `↑` `↓` | Open categories / go to the power bar |
+| `↓` | Go to the power bar (Sleep, Restart, Shutdown); `↑` goes back |
 | `Enter` | Launch the selected app |
 | `F` | Quick search |
 | `R` | Reorder mode |
@@ -89,6 +89,7 @@ Your apps and settings are stored in `%APPDATA%\TVLauncher`, outside the program
 
 | Setting | Where | Values |
 |---|---|---|
+| `CATEGORY_SELECTOR_ENABLED` | `modules/category_manager.py` | `False` (default, no category bar) or `True` |
 | `HOME_BACK_ACTION` | top of `TvLauncher_Windows.py` | `"none"` (default) or `"sleep"` |
 | `GUIDE_ACTION` | top of `TvLauncher_Windows.py` | `"power_bar"` (default), `"sleep_confirm"` or `"sleep_now"` |
 | `GUIDE_BUTTON_INDEXES` | `modules/joystick_manager.py` | Button numbers for a PlayStation or other pad, for example `(12,)` |
@@ -100,6 +101,9 @@ Careful with `HOME_BACK_ACTION = "sleep"`: one extra press of `B` after backing 
 
 **The Guide button does nothing.**
 Xbox controllers are read through XInput and should work after you turn off the Game Bar controller shortcut (see above). For a PlayStation pad, find its button number: open Command Prompt in the program folder, run `set TVL_DEBUG_BUTTONS=1`, then `TVLauncher.bat`, press the PS button and read `[joystick] button index N pressed`. Put `N` into `GUIDE_BUTTON_INDEXES`.
+
+**Sleep hibernates, or the PC does not sleep at all.**
+Open Command Prompt and run `powercfg /a`. If *Standby (S3)* or *Standby (S0 Low Power Idle)* is listed as available, Sleep should work. If standby is listed as unavailable, Windows cannot sleep on this PC (often a BIOS or driver setting). Running `powercfg -h off` as administrator removes hibernation, so the PC can only sleep or shut down.
 
 **An app tile shows a generic icon.**
 Some apps start through an updater stub (for example `Update.exe --processStart ...`), so Windows only has the stub's icon. Open **Edit App** and pick a PNG or JPG as the image.

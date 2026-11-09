@@ -1168,28 +1168,31 @@ class TVLauncher(QMainWindow):
         )
         
         btn_size = self.scaling.scale(50)
-        self.restart_btn = QPushButton("↻")
-        self.restart_btn.setFixedSize(btn_size, btn_size)
-        self.restart_btn.setToolTip("Restart")
-        self.restart_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        button_layout.addWidget(self.restart_btn)
+        btn_w = self.scaling.scale(200)
 
-        self.sleep_btn = QPushButton("☾")
-        self.sleep_btn.setFixedSize(btn_size, btn_size)
+        # Order on the bar: Sleep, Restart, Shutdown (no Hibernate).
+        self.sleep_btn = QPushButton("Sleep")
+        self.sleep_btn.setFixedSize(btn_w, btn_size)
         self.sleep_btn.setToolTip("Sleep")
         self.sleep_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         button_layout.addWidget(self.sleep_btn)
 
-        self.shutdown_btn = QPushButton("OFF")
-        self.shutdown_btn.setFixedSize(btn_size, btn_size)
+        self.restart_btn = QPushButton("Restart")
+        self.restart_btn.setFixedSize(btn_w, btn_size)
+        self.restart_btn.setToolTip("Restart")
+        self.restart_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        button_layout.addWidget(self.restart_btn)
+
+        self.shutdown_btn = QPushButton("Shutdown")
+        self.shutdown_btn.setFixedSize(btn_w, btn_size)
         self.shutdown_btn.setToolTip("Shutdown")
         self.shutdown_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         button_layout.addWidget(self.shutdown_btn)
 
         # TV setup: no "Close launcher" (✕) button on the power bar.
         self.menu_buttons = [
-            ("restart", self.restart_btn),
             ("sleep", self.sleep_btn),
+            ("restart", self.restart_btn),
             ("shutdown", self.shutdown_btn),
         ]
         for action, btn in self.menu_buttons:
@@ -1198,11 +1201,11 @@ class TVLauncher(QMainWindow):
         for action, btn in self.menu_buttons:
             if btn == self.shutdown_btn:
                 btn.setStyleSheet(Styles.menu_btn_normal(
-                    self.scaling.scale(2), self.scaling.scale(25), self.scaling.scale_font(14), "600"
+                    self.scaling.scale(2), self.scaling.scale(25), self.scaling.scale_font(20), "600"
                 ))
             else:
                 btn.setStyleSheet(Styles.menu_btn_normal(
-                    self.scaling.scale(2), self.scaling.scale(25), self.scaling.scale_font(24), "500"
+                    self.scaling.scale(2), self.scaling.scale(25), self.scaling.scale_font(20), "500"
                 ))
         
         menu_layout.addWidget(button_widget)
@@ -1513,20 +1516,20 @@ class TVLauncher(QMainWindow):
             if i == self.menu_button_index:
                 if btn == self.shutdown_btn:
                     btn.setStyleSheet(Styles.menu_btn_focused(
-                        self.scaling.scale(2), self.scaling.scale(25), self.scaling.scale_font(14)
+                        self.scaling.scale(2), self.scaling.scale(25), self.scaling.scale_font(20)
                     ))
                 else:
                     btn.setStyleSheet(Styles.menu_btn_focused(
-                        self.scaling.scale(2), self.scaling.scale(25), self.scaling.scale_font(24)
+                        self.scaling.scale(2), self.scaling.scale(25), self.scaling.scale_font(20)
                     ))
             else:
                 if btn == self.shutdown_btn:
                     btn.setStyleSheet(Styles.menu_btn_normal(
-                        self.scaling.scale(2), self.scaling.scale(25), self.scaling.scale_font(14), "600"
+                        self.scaling.scale(2), self.scaling.scale(25), self.scaling.scale_font(20), "600"
                     ))
                 else:
                     btn.setStyleSheet(Styles.menu_btn_normal(
-                        self.scaling.scale(2), self.scaling.scale(25), self.scaling.scale_font(24), "500"
+                        self.scaling.scale(2), self.scaling.scale(25), self.scaling.scale_font(20), "500"
                     ))
    
     def execute_menu_action(self):
@@ -1686,7 +1689,7 @@ class TVLauncher(QMainWindow):
         action_text = {
             "restart": "Restart",
             "shutdown": "Shutdown",
-            "sleep": "Suspend"
+            "sleep": "Sleep"
         }.get(action, action.capitalize())
 
         confirm_dialog = self._make_confirm_dialog(
@@ -2218,11 +2221,11 @@ class TVLauncher(QMainWindow):
         for action, btn in self.menu_buttons:
             if btn == self.shutdown_btn:
                 btn.setStyleSheet(Styles.menu_btn_normal(
-                    self.scaling.scale(2), self.scaling.scale(25), self.scaling.scale_font(14), "600"
+                    self.scaling.scale(2), self.scaling.scale(25), self.scaling.scale_font(20), "600"
                 ))
             else:
                 btn.setStyleSheet(Styles.menu_btn_normal(
-                    self.scaling.scale(2), self.scaling.scale(25), self.scaling.scale_font(24), "500"
+                    self.scaling.scale(2), self.scaling.scale(25), self.scaling.scale_font(20), "500"
                 ))
 
     def open_quick_search(self):
