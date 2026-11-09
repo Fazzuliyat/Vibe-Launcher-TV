@@ -13,3 +13,14 @@ Thumbs.db
 # Local runtime files
 *.log
 scanner_cache_*.json
+
+# libmpv DLL is 116 MB, over GitHub's 100 MB file limit. Users download it
+# themselves; see assets/lib/mpv/windows/readme.txt
+assets/lib/mpv/windows/libmpv-*.dll
+
+# Wallpapers downloaded at runtime (keep only the bundled default)
+assets/wallpapers/*
+!assets/wallpapers/default.jpg
+
+# Catalog cache for streamed video wallpapers
+assets/wallpapers_video/
