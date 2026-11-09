@@ -5,7 +5,12 @@ name: Release
 #   - experimental Windows build (.exe, no Python needed) as a .zip
 on:
   push:
-    tags: ["v*"]
+    tags: ["v*", "[0-9]*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to build a release for, e.g. 1.5.1"
+        required: true
 
 permissions:
   contents: write
@@ -13,8 +18,12 @@ permissions:
 jobs:
   release:
     runs-on: windows-latest
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
 
       - uses: actions/setup-python@v5
         with:
@@ -23,14 +32,14 @@ jobs:
       - name: Source packages
         shell: bash
         run: |
-          NAME="Vibe-Launcher-TV-${GITHUB_REF_NAME}"
+          NAME="Vibe-Launcher-TV-${TAG}"
           git archive --format=zip    --prefix="$NAME/" -o "$NAME-source.zip"    HEAD
           git archive --format=tar.gz --prefix="$NAME/" -o "$NAME-source.tar.gz" HEAD
 
       - name: Release notes from CHANGELOG.md
         shell: bash
         run: |
-          VER="${GITHUB_REF_NAME#v}"
+          VER="${TAG#v}"
           awk -v v="$VER" '$0 ~ "^## "v" " {f=1; next} /^## / {f=0} f' CHANGELOG.md > notes.md
           if [ ! -s notes.md ]; then echo "See CHANGELOG.md." > notes.md; fi
           cat >> notes.md <<'TXT'
@@ -48,11 +57,12 @@ jobs:
           pip install -r requirements.txt pyinstaller
           pyinstaller --noconfirm --windowed --name VibeLauncherTV --collect-submodules modules TvLauncher_Windows.py
           cp -r assets dist/VibeLauncherTV/assets
-          cd dist && 7z a "../Vibe-Launcher-TV-${GITHUB_REF_NAME}-windows-exe.zip" VibeLauncherTV
+          cd dist && 7z a "../Vibe-Launcher-TV-${TAG}-windows-exe.zip" VibeLauncherTV
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          name: Vibe Launcher TV ${{ github.ref_name }}
+          name: Vibe Launcher TV ${{ env.TAG }}
+          tag_name: ${{ env.TAG }}
           body_path: notes.md
           files: Vibe-Launcher-TV-*
