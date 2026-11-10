@@ -17,7 +17,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import (
     Qt, QPropertyAnimation, QEasingCurve, QPoint, QSize,
     QParallelAnimationGroup, QTimer, QCoreApplication,
-    QThread, pyqtSignal, QFileInfo
+    QThread, pyqtSignal, QFileInfo, QEvent
 )
 from PyQt6.QtGui import (
     QPixmap, QFont, QKeyEvent, QPainter, QColor, QIcon, QBrush,
@@ -36,13 +36,6 @@ from modules.key_remapper import KeyMapper
 from modules.tile_effects import TileGlowEffect
 from modules.joystick_manager import JoystickManager
 from modules.volume_overlay import install_volume_control
-from modules.category_manager import (
-    integrate_categories, 
-    add_category_navigation_to_keypressevent,
-    add_category_to_edit_dialog,
-    add_quick_category_shortcut,  
-    add_category_joystick_support 
-)
 from modules.background_manager import BackgroundManager
 from modules.video_wallpaper_manager import VideoWallpaperManager
 from modules.update_notification import check_for_updates
@@ -92,16 +85,7 @@ SCANNER_CACHE_FILE = USER_DATA_DIR / f'scanner_cache_{_cache_suffix}.json'
 # ---------------------------------------------------------------------------
 # TV / console customisation
 # ---------------------------------------------------------------------------
-# What Back / Esc / B does on the HOME screen (no dialog, bottom bar not focused):
-#   "none"  -> nothing (recommended: one stray B press can't do anything)
-#   "sleep" -> put the PC to sleep immediately
-HOME_BACK_ACTION = "none"
-
-# What the Xbox / PlayStation Guide (Home) button does:
-#   "power_bar"     -> jump to the Restart / Sleep / Shutdown bar (press again to leave it)
-#   "sleep_confirm" -> open the "are you sure you want to sleep?" dialog
-#   "sleep_now"     -> sleep immediately
-GUIDE_ACTION = "power_bar"
+HOME_HOLD_DURATION_MS = 3000
 
 # Generated tile images for apps that only have an .exe (no cover art)
 ICON_CACHE_DIR = USER_DATA_DIR / 'icon_cache'
@@ -296,6 +280,7 @@ class DownloadWorker(QThread):
             self.progress_update.emit("Programs already present.", 100)
             self.finished.emit()
             return
+        self.sound_manager.navigate()
 
         for i, prog in enumerate(to_download):
             if not self.is_running:
@@ -360,10 +345,11 @@ class CoverDownloadWorker(QThread):
 
 
 class AppTile(QWidget):
-    def __init__(self, app_data, scaling, parent=None):
+    def __init__(self, app_data, scaling, parent=None, row_scale=1.0):
         super().__init__(parent)
         self.app_data = app_data
         self.scaling = scaling
+        self.row_scale = row_scale
         self.is_focused = False
         self.glow_effect = None
         self._normal_pixmap = None
@@ -420,10 +406,15 @@ class AppTile(QWidget):
     def set_focused(self, focused):
         self.is_focused = focused
         icon_path = self._tile_image_path()
+        factor = self.row_scale
 
         if focused:
-            self.setFixedSize(self.focused_width, self.focused_height)
-            self.image_label.setFixedSize(self.focused_img_width, self.focused_img_height)
+            width = round(self.focused_width * factor)
+            height = round(self.focused_height * factor)
+            image_width = round(self.focused_img_width * factor)
+            image_height = round(self.focused_img_height * factor)
+            self.setFixedSize(width, height)
+            self.image_label.setFixedSize(image_width, image_height)
             
             if self._focused_pixmap is None and icon_path and Path(icon_path).exists():
                 self._focused_pixmap = rounded_pixmap(
@@ -464,8 +455,12 @@ class AppTile(QWidget):
             if self.glow_effect:
                 self.glow_effect.stop()
             
-            self.setFixedSize(self.normal_width, self.normal_height)
-            self.image_label.setFixedSize(self.normal_img_width, self.normal_img_height)
+            width = round(self.normal_width * factor)
+            height = round(self.normal_height * factor)
+            image_width = round(self.normal_img_width * factor)
+            image_height = round(self.normal_img_height * factor)
+            self.setFixedSize(width, height)
+            self.image_label.setFixedSize(image_width, image_height)
             
             if self._normal_pixmap is None and icon_path and Path(icon_path).exists():
                 self._normal_pixmap = rounded_pixmap(
@@ -492,6 +487,12 @@ class AppTile(QWidget):
                     self._recreate_shadow()
                     self.shadow.setBlurRadius(self.scaling.scale(15))
                     self.shadow.setYOffset(self.scaling.scale(4))
+
+    def set_row_scale(self, row_scale):
+        if self.row_scale == row_scale:
+            return
+        self.row_scale = row_scale
+        self.set_focused(self.is_focused)
 
     def _recreate_shadow(self):
         from PyQt6.QtWidgets import QGraphicsDropShadowEffect
@@ -557,7 +558,17 @@ class TVLauncher(QMainWindow):
         self.volume_manager = install_volume_control(self.scaling, self)
         
         self.key_mapper.install_event_filter(QApplication.instance())
+        QApplication.instance().installEventFilter(self)
         self.current_index = 0
+        self.active_row = "apps"
+        self.favorite_index = 0
+        self.favorite_tiles = []
+        self.favorite_selected_tile_index = None
+        self.empty_apps_label = None
+        self._escape_hold_timer = QTimer(self)
+        self._escape_hold_timer.setSingleShot(True)
+        self._escape_hold_timer.timeout.connect(self._on_home_hold_timeout)
+        self._escape_hold_triggered = False
         self.tiles = []
         self.menu_button_index = 0
         self.is_in_menu = False
@@ -607,9 +618,6 @@ class TVLauncher(QMainWindow):
         self.build_infinite_carousel()
         integrate_reorder_mode(self)
         self.settings_menu = SettingsMenu(self.scaling, self)
-        integrate_categories(self)
-        add_quick_category_shortcut(self)
-        add_category_joystick_support(self)
         
         self.window_manager = WindowManager(self)
         screen = QApplication.primaryScreen().geometry()
@@ -775,14 +783,6 @@ class TVLauncher(QMainWindow):
         # fa già per il widget categorie qualche riga sotto.
         if hasattr(self, 'menu_container'):
             QTimer.singleShot(0, lambda: self._update_menu_bar_overlap_state())
-
-        # Il cambio di stretch factor aggiorna la geometria del carosello
-        # solo al prossimo giro di event loop: rimandiamo di conseguenza il
-        # riposizionamento del widget categorie (che deve seguirlo) con un
-        # singleShot(0), così legge la geometria già aggiornata.
-        if hasattr(self, 'category_selector'):
-            from category_manager import _position_category_selector
-            QTimer.singleShot(0, lambda: _position_category_selector(self))
 
     def _position_bottom_overlay(self):
         """Ancora la barra pulsanti (restart/sleep/off/close) e le istruzioni
@@ -1140,6 +1140,24 @@ class TVLauncher(QMainWindow):
         self.tile_width = self.scaling.scale(360)
         self.tile_spacing = self.scaling.scale(17)
         
+        self.favorites_container = QWidget()
+        self.favorites_container.setFixedHeight(self.scaling.scale(320))
+        self.favorites_container.setFixedWidth(visible_width)
+        self.favorites_container.setStyleSheet(Styles.TRANSPARENT)
+        favorites_layout = QVBoxLayout(self.favorites_container)
+        favorites_layout.setContentsMargins(0, 0, 0, 0)
+        favorites_layout.setSpacing(self.scaling.scale(4))
+        self.favorites_label = QLabel("Favorites")
+        self.favorites_label.setStyleSheet(Styles.row_heading(self.scaling.scale_font(18)))
+        favorites_layout.addWidget(self.favorites_label)
+        self.favorite_tiles_container = QWidget()
+        self.favorite_tiles_container.setStyleSheet(Styles.TRANSPARENT)
+        favorites_layout.addWidget(self.favorite_tiles_container)
+        main_layout.addWidget(self.favorites_container, alignment=Qt.AlignmentFlag.AlignCenter)
+        main_layout.addSpacing(self.scaling.scale(12))
+        self.apps_label = QLabel("All Apps")
+        self.apps_label.setStyleSheet(Styles.row_heading(self.scaling.scale_font(18)))
+        main_layout.addWidget(self.apps_label, alignment=Qt.AlignmentFlag.AlignHCenter)
         main_layout.addWidget(self.carousel_container, alignment=Qt.AlignmentFlag.AlignCenter)
         main_layout.addSpacing(0)
         main_layout.addStretch(0)
@@ -1211,11 +1229,14 @@ class TVLauncher(QMainWindow):
         menu_layout.addWidget(button_widget)
         menu_layout.addStretch()
         instructions = QLabel(
-            "Navigate: ← → ↑ ↓ | Launch: Enter/A | Edit: E/X | Delete: Del/Y | Settings: S/Start | Search: F/LB | Exit: Esc/B",
+            "Keyboard: arrows · Enter · P Favorite · E Edit · Del Remove · S Settings · F Search · hold Esc 3s\n"
+            "Controller: D-pad · A Select · X Favorite · Y Remove · Start Settings · LB Search · hold Guide 3s\n"
+            "TV remote: mapped arrows / OK · P Favorite · E Edit · Del Remove · S Settings · F Search · hold Home 3s",
             self
         )
         instructions.setStyleSheet(Styles.instructions(self.scaling.scale_font(11)))
         instructions.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        instructions.setWordWrap(True)
 
         # Riferimenti per poter ancorare barra menu + istruzioni al bordo
         # inferiore della finestra (stile overlay), indipendentemente dallo
@@ -1255,14 +1276,13 @@ class TVLauncher(QMainWindow):
         return {'apps': [], 'background': '', 'steamgriddb_api_key': ''}
    
     def save_config(self):
-        apps_to_save = getattr(self, '_all_apps_backup', self.apps)
         clean_apps = []
-        for app in apps_to_save:
+        for app in self.apps:
             clean_app = {
                 'name': str(app.get('name', '')),
                 'path': str(app.get('path', '')),
                 'icon': str(app.get('icon', '')),
-                'category': str(app.get('category', 'Other'))
+                'favorite': bool(app.get('favorite', False))
             }
             if not isinstance(clean_app['icon'], str):
                 clean_app['icon'] = clean_app['path']
@@ -1296,18 +1316,6 @@ class TVLauncher(QMainWindow):
         else:
             config_data['video_wallpaper'] = self.config_data.get('video_wallpaper', {})
         
-        if hasattr(self, 'category_manager'):
-            config_data = self.category_manager.save_categories(config_data)
-        elif 'categories' in self.config_data:
-            # save_config() puo' essere chiamato prima che integrate_categories()
-            # crei self.category_manager (es. durante init_ui(), che chiama
-            # set_carousel_vertical_position() -> save_config()). Senza questo
-            # fallback, la chiave 'categories' spariva dal file scritto in
-            # quel momento -> al successivo CategoryManager(...) mancava la
-            # chiave nel json e si ricadeva sempre sulle categorie di default,
-            # cancellando ogni rinomina fatta nella sessione precedente.
-            config_data['categories'] = self.config_data['categories']
-        
         with open(self.config_file, 'w') as f:
             json.dump(config_data, f, indent=2)
     
@@ -1337,10 +1345,6 @@ class TVLauncher(QMainWindow):
                     if hasattr(widget, '_refresh_toggle'):
                         widget._refresh_toggle()
    
-    def _on_category_changed(self, category_index):
-        self.current_index = 0
-        self.build_infinite_carousel()
-
     def set_api_key(self):
         dialog = ApiKeyDialog(self.steamgriddb_api_key, self, scaling=self.scaling)
         if dialog.exec() == QDialog.DialogCode.Accepted:
@@ -1730,41 +1734,99 @@ class TVLauncher(QMainWindow):
         Hibernate is enabled in Windows (rundll32 doesn't deliver the 0 as the 'hibernate'
         flag), so call the API directly: SetSuspendState(bHibernate, bForce, bWakeupDisabled)."""
         import ctypes
-        ctypes.windll.powrprof.SetSuspendState(False, True, False)
+        power_api = ctypes.WinDLL("powrprof.dll", use_last_error=True)
+        set_suspend_state = power_api.SetSuspendState
+        set_suspend_state.argtypes = [ctypes.c_ubyte, ctypes.c_ubyte, ctypes.c_ubyte]
+        set_suspend_state.restype = ctypes.c_ubyte
+        if not set_suspend_state(False, True, False):
+            error = ctypes.get_last_error()
+            raise OSError(error, "Windows could not enter sleep mode")
 
     def _on_home_back_pressed(self):
-        """Back / Esc / B on the home screen."""
-        if HOME_BACK_ACTION == "sleep":
-            self.execute_power_action("sleep")
-        # "none": do nothing
+        """A short Back press on the home screen is intentionally a no-op."""
 
     def on_guide_button(self):
-        """Xbox / PlayStation Guide (Home) button. Called by JoystickManager."""
+        """Short Guide press keeps the existing power-bar shortcut."""
         if (QApplication.activeModalWidget() is not None
                 or not self.inputs_enabled
                 or getattr(self, 'parental_control_dialog_active', False)
-                or getattr(self, 'is_in_category_selector', False)
                 or getattr(self, 'reorder_active', False)
                 or (hasattr(self, 'settings_menu') and self.settings_menu.is_open)
                 or (hasattr(self, 'quick_search') and self.quick_search.isVisible())):
             return
         self.sound_manager.navigate()
-        if GUIDE_ACTION == "sleep_now":
-            self.execute_power_action("sleep")
-        elif GUIDE_ACTION == "sleep_confirm":
-            self.confirm_action("sleep")
-        elif self.is_in_menu:                       # "power_bar": second press leaves the bar
+        if self.is_in_menu:
             self.is_in_menu = False
             self._reset_menu_styles()
             if self.menu_bar_needs_reveal and self.menu_bar_visible:
                 self._animate_reveal(False)
-        else:                                       # "power_bar": jump to the bar, focus Sleep
+        else:
             self.is_in_menu = True
             self.menu_button_index = next(
                 (i for i, (a, _b) in enumerate(self.menu_buttons) if a == "sleep"), 0)
             if self.menu_bar_needs_reveal and not self.menu_bar_visible:
                 self._animate_reveal(True)
             self.update_menu_focus()
+
+    def _on_home_hold_timeout(self):
+        self._escape_hold_triggered = True
+        self.return_home_screen()
+
+    def eventFilter(self, watched, event):
+        if event.type() not in (QEvent.Type.KeyPress, QEvent.Type.KeyRelease):
+            return super().eventFilter(watched, event)
+        home_keys = {
+            Qt.Key.Key_Escape,
+            Qt.Key.Key_Home,
+            getattr(Qt.Key, "Key_HomePage", Qt.Key.Key_Home),
+        }
+        if event.key() not in home_keys:
+            return super().eventFilter(watched, event)
+
+        if event.type() == QEvent.Type.KeyPress:
+            if (
+                event.spontaneous()
+                and not event.isAutoRepeat()
+                and not self._escape_hold_timer.isActive()
+            ):
+                self._escape_hold_triggered = False
+                self._escape_hold_timer.start(HOME_HOLD_DURATION_MS)
+            return self._escape_hold_triggered
+
+        if self._escape_hold_timer.isActive():
+            self._escape_hold_timer.stop()
+        triggered = self._escape_hold_triggered
+        self._escape_hold_triggered = False
+        return triggered
+
+    def return_home_screen(self):
+        """Dismiss overlays and restore input and focus to the launcher home."""
+        modal = QApplication.activeModalWidget()
+        if modal is not None:
+            if hasattr(modal, "reject"):
+                modal.reject()
+            else:
+                modal.close()
+        popup = QApplication.activePopupWidget()
+        if popup is not None:
+            popup.close()
+        if hasattr(self, "settings_menu") and self.settings_menu.is_open:
+            self.settings_menu.close_menu()
+        if hasattr(self, "quick_search") and self.quick_search.isVisible():
+            self.quick_search.close_search()
+        if getattr(self, "reorder_active", False) and hasattr(self, "reorder_mode"):
+            self.reorder_mode.cancel_reorder()
+
+        self.inputs_enabled = True
+        self.is_in_menu = False
+        self.active_row = "apps"
+        self._reset_menu_styles()
+        self._apply_row_focus()
+        if self.menu_bar_needs_reveal and self.menu_bar_visible:
+            self._animate_reveal(False)
+        self.setFocus()
+        self.raise_()
+        self.activateWindow()
 
     def build_infinite_carousel(self):
         for tile in self.tiles:
@@ -1778,10 +1840,23 @@ class TVLauncher(QMainWindow):
             tile.setParent(None)
             tile.deleteLater()
         self.tiles.clear()
+        for tile in self.favorite_tiles:
+            tile.setParent(None)
+            tile.deleteLater()
+        self.favorite_tiles.clear()
+        if self.empty_apps_label is not None:
+            self.empty_apps_label.deleteLater()
+            self.empty_apps_label = None
         if not self.apps:
-            empty_label = QLabel("No apps added yet. Press '+ Add App' to get started!", self.carousel_container)
-            empty_label.setStyleSheet(Styles.EMPTY_LABEL)
-            empty_label.move(0, 100)
+            self.empty_apps_label = QLabel(
+                "No apps added yet. Press '+ Add App' to get started!",
+                self.carousel_container
+            )
+            self.empty_apps_label.setStyleSheet(Styles.EMPTY_LABEL)
+            self.empty_apps_label.move(0, 100)
+            self.empty_apps_label.show()
+            self.build_favorites_row()
+            self._apply_row_focus()
             return
         if self.current_index >= len(self.apps):
             self.current_index = 0
@@ -1789,9 +1864,12 @@ class TVLauncher(QMainWindow):
         
         if num_apps <= 5:
             for i in range(num_apps):
-                tile = AppTile(self.apps[i], self.scaling, self.carousel_container)
+                tile = AppTile(
+                    self.apps[i], self.scaling, self.carousel_container,
+                    1.0 if self.active_row == "apps" else 0.72
+                )
                 tile.app_index = i
-                is_focused = (i == self.current_index)
+                is_focused = self.active_row == "apps" and i == self.current_index
                 tile.set_focused(is_focused)
                 self.tiles.append(tile)
         else:
@@ -1799,16 +1877,107 @@ class TVLauncher(QMainWindow):
             for i in range(self.max_visible_tiles):
                 app_offset = i - center_tile_index
                 app_idx = (self.current_index + app_offset) % num_apps
-                tile = AppTile(self.apps[app_idx], self.scaling, self.carousel_container)
+                tile = AppTile(
+                    self.apps[app_idx], self.scaling, self.carousel_container,
+                    1.0 if self.active_row == "apps" else 0.72
+                )
                 tile.app_index = app_idx
-                is_focused = (i == center_tile_index)
+                is_focused = self.active_row == "apps" and i == center_tile_index
                 tile.set_focused(is_focused)
                 self.tiles.append(tile)
         
         self._position_all_tiles()
         for tile in self.tiles:
             tile.show()
-        current_app = self.apps[self.current_index]
+        self.build_favorites_row()
+        self._apply_row_focus()
+
+    def build_favorites_row(self):
+        for tile in self.favorite_tiles:
+            tile.setParent(None)
+            tile.deleteLater()
+        self.favorite_tiles.clear()
+        for child in self.favorite_tiles_container.findChildren(QLabel):
+            child.deleteLater()
+        favorites = [i for i, app in enumerate(self.apps) if app.get("favorite", False)]
+        if not favorites:
+            self.favorite_selected_tile_index = None
+            empty = QLabel("Add apps to Favorites with P or X", self.favorite_tiles_container)
+            empty.setStyleSheet(Styles.EMPTY_LABEL)
+            empty.move(self.scaling.scale(10), self.scaling.scale(30))
+            return
+        if self.current_index in favorites:
+            self.favorite_index = favorites.index(self.current_index)
+        else:
+            self.favorite_index = min(self.favorite_index, len(favorites) - 1)
+
+        if len(favorites) > 5:
+            center = self.max_visible_tiles // 2
+            start = self.favorite_index - center
+            visible_apps = [
+                favorites[(start + offset) % len(favorites)]
+                for offset in range(self.max_visible_tiles)
+            ]
+            selected_tile = center
+        else:
+            visible_apps = favorites
+            selected_tile = self.favorite_index
+        self.favorite_selected_tile_index = selected_tile
+
+        x_pos = self.scaling.scale(5)
+        for i, app_index in enumerate(visible_apps):
+            tile = AppTile(
+                self.apps[app_index], self.scaling, self.favorite_tiles_container,
+                1.0 if self.active_row == "favorites" else 0.72
+            )
+            tile.app_index = app_index
+            tile.set_focused(self.active_row == "favorites" and i == selected_tile)
+            tile.move(int(x_pos), self.scaling.scale(2))
+            x_pos += tile.width() + self.tile_spacing
+            tile.show()
+            self.favorite_tiles.append(tile)
+
+    def _navigate_favorites(self, direction):
+        favorites = [i for i, app in enumerate(self.apps) if app.get("favorite", False)]
+        if not favorites:
+            self.active_row = "apps"
+            self._apply_row_focus()
+            return
+        if self.current_index in favorites:
+            self.favorite_index = favorites.index(self.current_index)
+        step = 1 if direction == "right" else -1
+        self.favorite_index = (self.favorite_index + step) % len(favorites)
+        self.current_index = favorites[self.favorite_index]
+        self.build_infinite_carousel()
+
+    def _apply_row_focus(self):
+        if self.active_row == "favorites" and not any(
+            app.get("favorite", False) for app in self.apps
+        ):
+            self.active_row = "apps"
+        for i, tile in enumerate(self.tiles):
+            tile.set_row_scale(1.0 if self.active_row == "apps" else 0.72)
+            selected = tile.app_index == self.current_index if len(self.apps) <= 5 else i == 0
+            tile.set_focused(self.active_row == "apps" and selected)
+        for i, tile in enumerate(self.favorite_tiles):
+            tile.set_row_scale(1.0 if self.active_row == "favorites" else 0.72)
+            tile.set_focused(
+                self.active_row == "favorites" and i == self.favorite_selected_tile_index
+            )
+        self.favorites_label.setStyleSheet(
+            Styles.row_heading(self.scaling.scale_font(18), self.active_row == "favorites")
+        )
+        self.apps_label.setStyleSheet(
+            Styles.row_heading(self.scaling.scale_font(18), self.active_row == "apps")
+        )
+        self._position_all_tiles()
+        self._position_favorite_tiles()
+
+    def _position_favorite_tiles(self):
+        x_pos = self.scaling.scale(5)
+        for tile in self.favorite_tiles:
+            tile.move(int(x_pos), self.scaling.scale(2))
+            x_pos += tile.width() + self.tile_spacing
    
     def _position_all_tiles(self):
         if not self.tiles:
@@ -1820,10 +1989,7 @@ class TVLauncher(QMainWindow):
             x_pos = int(start_x)
             for i, tile in enumerate(self.tiles):
                 tile.move(int(x_pos), 22)
-                if i == self.current_index:
-                    x_pos += self.focused_width + self.tile_spacing
-                else:
-                    x_pos += self.normal_width + self.tile_spacing
+                x_pos += tile.width() + self.tile_spacing
         else:
             start_x = self.scaling.scale(5)
             x_pos = int(start_x)
@@ -1839,7 +2005,7 @@ class TVLauncher(QMainWindow):
         
         if num_apps <= 5:
             for i, tile in enumerate(self.tiles):
-                tile.set_focused(i == self.current_index)
+                tile.set_focused(self.active_row == "apps" and i == self.current_index)
             self._position_all_tiles()
             return
         
@@ -1910,7 +2076,7 @@ class TVLauncher(QMainWindow):
             last_tile.set_focused(False)
             
         for i, tile in enumerate(self.tiles):
-            tile.set_focused(i == center_tile_index)
+            tile.set_focused(self.active_row == "apps" and i == center_tile_index)
         self._position_all_tiles()
         self.is_animating = False
 
@@ -1950,17 +2116,11 @@ class TVLauncher(QMainWindow):
             'name': app_data.get('name', ''),
             'path': app_data.get('path', ''),
             'icon': app_data.get('icon', ''),
-            'category': self.category_manager.get_default_category()
+            'favorite': False
         }
         if isinstance(clean_app_data['icon'], QPixmap):
             clean_app_data['icon'] = app_data.get('path', '')
-        # Persist into the authoritative backup list when a category filter is
-        # active: launcher.apps is then a fresh per-build copy, so saving to it
-        # alone would lose the app on the next rebuild.
-        if hasattr(self, '_all_apps_backup'):
-            self._all_apps_backup.append(clean_app_data)
-        else:
-            self.apps.append(clean_app_data)
+        self.apps.append(clean_app_data)
         self.added_count += 1
     
     def _on_download_progress(self, message, percent):
@@ -2006,9 +2166,6 @@ class TVLauncher(QMainWindow):
         if dialog.exec() == QDialog.DialogCode.Accepted:
             app_data = dialog.get_app_data()
             if app_data['name'] and app_data['path']:
-                if not app_data.get('category'):
-                    app_data['category'] = self.category_manager.get_default_category()
-                
                 if (not app_data['icon'] or app_data['icon'] == app_data['path']) and self.image_manager.api_key and REQUESTS_AVAILABLE:
                     print(f"Searching image for: {app_data['name']}")
                     image_result = self.image_manager.get_app_image(app_data['name'], app_data['path'])
@@ -2018,10 +2175,7 @@ class TVLauncher(QMainWindow):
                     else:
                         print(f"⚠️ No image found, using exe icon")
                 
-                if hasattr(self, '_all_apps_backup'):
-                    self._all_apps_backup.append(app_data)
-                else:
-                    self.apps.append(app_data)
+                self.apps.append(app_data)
                 self.save_config()
                 self.build_infinite_carousel()
             else:
@@ -2036,19 +2190,10 @@ class TVLauncher(QMainWindow):
         if dialog.exec() == QDialog.DialogCode.Accepted:
             app_data = dialog.get_app_data()
             if app_data['name'] and app_data['path']:
-                # Update the authoritative backup entry in place: with a
-                # category filter active, launcher.apps is a per-build copy
-                # and save_config() persists _all_apps_backup, so replacing
-                # the visible entry would silently revert on the next rebuild.
-                current = self.apps[self.current_index]
-                backup = getattr(self, '_all_apps_backup', None)
-                target = None
-                if backup:
-                    target = next((a for a in backup if a is current), None)
-                if target is not None:
-                    target.update(app_data)
-                else:
-                    self.apps[self.current_index] = app_data
+                app_data['favorite'] = bool(app_data.get('favorite', False))
+                self.apps[self.current_index] = app_data
+                if self.active_row == "favorites" and not app_data['favorite']:
+                    self.active_row = "apps"
                 self.save_config()
                 self.build_infinite_carousel()
             else:
@@ -2068,16 +2213,16 @@ class TVLauncher(QMainWindow):
 
         if reply == QDialog.DialogCode.Accepted:
             removed_app = self.apps[self.current_index]
-            if hasattr(self, '_all_apps_backup'):
-                self._all_apps_backup = [app for app in self._all_apps_backup
-                                         if app['name'] != removed_app['name']]
-            else:
-                self.apps.pop(self.current_index)
+            self.apps.pop(self.current_index)
             
             if self.current_index >= len(self.apps) and self.apps:
                 self.current_index = len(self.apps) - 1
             elif not self.apps:
                 self.current_index = 0
+            if self.active_row == "favorites" and not any(
+                app.get('favorite', False) for app in self.apps
+            ):
+                self.active_row = "apps"
             
             self.save_config()
             self.build_infinite_carousel()
@@ -2107,8 +2252,6 @@ class TVLauncher(QMainWindow):
         self.activateWindow()
 
     def keyPressEvent(self, event: QKeyEvent):
-        if add_category_navigation_to_keypressevent(self, event):
-            return
         if hasattr(self, 'settings_menu') and self.settings_menu.is_open:
             self.settings_menu.keyPressEvent(event)
             return
@@ -2149,7 +2292,11 @@ class TVLauncher(QMainWindow):
                 return
 
         if key == Qt.Key.Key_Down:
-            if not self.is_in_menu:
+            if self.active_row == "favorites":
+                self.sound_manager.navigate()
+                self.active_row = "apps"
+                self._apply_row_focus()
+            elif not self.is_in_menu:
                 self.sound_manager.navigate()
                 self.is_in_menu = True
                 self.menu_button_index = 0
@@ -2164,11 +2311,23 @@ class TVLauncher(QMainWindow):
                 self._reset_menu_styles()
                 if self.menu_bar_needs_reveal and self.menu_bar_visible:
                     self._animate_reveal(False)
+            elif self.active_row == "apps" and any(
+                app.get("favorite", False) for app in self.apps
+            ):
+                favorites = [i for i, app in enumerate(self.apps) if app.get("favorite", False)]
+                if self.current_index not in favorites:
+                    self.current_index = favorites[0]
+                    self.favorite_index = 0
+                self.sound_manager.navigate()
+                self.active_row = "favorites"
+                self._apply_row_focus()
 
         elif key == Qt.Key.Key_Right:
             if self.is_in_menu:
                 self.menu_button_index = (self.menu_button_index + 1) % len(self.menu_buttons)
                 self.update_menu_focus()
+            elif self.active_row == "favorites":
+                self._navigate_favorites("right")
             elif self.apps and not self.is_animating:
                 num_apps = len(self.apps)
                 if num_apps <= 5:
@@ -2183,6 +2342,8 @@ class TVLauncher(QMainWindow):
             if self.is_in_menu:
                 self.menu_button_index = (self.menu_button_index - 1) % len(self.menu_buttons)
                 self.update_menu_focus()
+            elif self.active_row == "favorites":
+                self._navigate_favorites("left")
             elif self.apps and not self.is_animating:
                 num_apps = len(self.apps)
                 if num_apps <= 5:
@@ -2209,6 +2370,10 @@ class TVLauncher(QMainWindow):
             if not self.is_in_menu and self.apps:
                 self.edit_current_app()
 
+        elif key == Qt.Key.Key_P:
+            if not self.is_in_menu and self.apps:
+                self.toggle_current_favorite()
+
         elif key == Qt.Key.Key_Escape:
             if self.is_in_menu:
                 self.sound_manager.back()
@@ -2216,6 +2381,16 @@ class TVLauncher(QMainWindow):
                 self._reset_menu_styles()
             else:
                 self._on_home_back_pressed()
+
+    def toggle_current_favorite(self):
+        if not self.apps or not (0 <= self.current_index < len(self.apps)):
+            return
+        app = self.apps[self.current_index]
+        app['favorite'] = not app.get('favorite', False)
+        if not app['favorite'] and self.active_row == "favorites":
+            self.active_row = "apps"
+        self.save_config()
+        self.build_infinite_carousel()
 
     def _reset_menu_styles(self):
         for action, btn in self.menu_buttons:

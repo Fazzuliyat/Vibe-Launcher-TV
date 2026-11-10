@@ -80,11 +80,6 @@ class JoystickManager:
         self.axis_deadzone = 0.2
         self.button_cooldown = {}
         self.axis_cooldown = 0
-        self._category_selector_enabled = False
-        self._category_open_last_y = (False, 0, False)
-        self._category_selector_last_x = (False, False, 0, False, False)
-        self._category_selector_last_y = (False, 0, False)
-        self._category_selector_last_b = False
         # Stati degli assi per rilevare cambiamenti
         self.last_axis_state = {'x': 0, 'y': 0}
         self.last_hat = (0, 0)
@@ -94,7 +89,6 @@ class JoystickManager:
         self._reorder_last_x = (False, False, 0, False, False)
         self._exit_dialog_last_x = (False, False, 0, False, False)
         self._search_last_state = (False, False, 0, False, False)
-        self._category_dialog_last_state = (False, False, 0, False, False)
         self._bottom_menu_last_x = (False, False, 0, False, False)
         self._bottom_menu_last_y = (False, 0, False)
         self._carousel_last_x = (False, False, 0, False, False)
@@ -104,6 +98,8 @@ class JoystickManager:
 
         # Guide / Home button state
         self._guide_was_down = False
+        self._guide_pressed_at = None
+        self._guide_hold_handled = False
         self._dbg_down = set()
         self._xinput_get_state_ex = _load_xinput_get_state_ex()
 
@@ -111,11 +107,6 @@ class JoystickManager:
             pygame.init()
             self.init_joystick()
             self.start_detection_timer()
-
-    def register_category_support(self, launcher):
-        """Registra il category selector per il supporto joystick"""
-        self._category_selector_enabled = True
-        
 
     def init_joystick(self):
         """Inizializza il joystick se disponibile"""
@@ -235,7 +226,10 @@ class JoystickManager:
                 raise pygame.error("Joystick system not ready or no device")
             
             # Guide / Home button (checked first; the launcher decides if it may act on it)
-            if self._poll_guide_button():
+            guide_action = self._poll_guide_button()
+            if guide_action:
+                if guide_action == "held":
+                    return
                 handler = getattr(self.parent, "on_guide_button", None)
                 if handler:
                     handler()
@@ -245,13 +239,11 @@ class JoystickManager:
             if self._handle_parental_control():
                 return
 
-            if self._handle_settings_menu():
+            # Route every modal first so a popup always owns controller input.
+            if self._handle_exit_dialog():
                 return
 
-            # Confirm / info dialogs (restart, shutdown, sleep, ...) take the gamepad.
-            # Must run BEFORE the inputs_enabled gate: dialogs such as "Launch Error"
-            # open while inputs are disabled.
-            if self._handle_exit_dialog():
+            if self._handle_settings_menu():
                 return
 
             if not self.parent.inputs_enabled:
@@ -259,17 +251,7 @@ class JoystickManager:
 
             if self._handle_reorder_mode():
                 return
-            # Gestisci category selector se abilitato e aperto
-            if self._category_selector_enabled and \
-                hasattr(self.parent, 'is_in_category_selector') and \
-                self.parent.is_in_category_selector:
-                    self._handle_category_selector()
-                    return
-
             if self._handle_quick_search():
-                return
-            
-            if self._handle_category_dialog():
                 return
             
             if self._handle_bottom_menu():
@@ -426,7 +408,7 @@ class JoystickManager:
         
     
     def _poll_guide_button(self):
-        """Edge-detect the Guide / Home button. True only on the tick it is pressed."""
+        """Return press/hold edges for the Guide / Home button."""
         joy = self.joystick
         n = joy.get_numbuttons()
         if DEBUG_BUTTONS:
@@ -442,9 +424,23 @@ class JoystickManager:
             self.button_cooldown[i] = now + 1000
 
         down = bool(raw) or self._xinput_guide_down()
+        if down and not self._guide_was_down:
+            self._guide_pressed_at = now
+            self._guide_hold_handled = False
+        elif down and not self._guide_hold_handled and self._guide_pressed_at is not None:
+            if now - self._guide_pressed_at >= 3000:
+                home = getattr(self.parent, "return_home_screen", None)
+                if home:
+                    home()
+                self._guide_hold_handled = True
+                self._guide_was_down = down
+                return "held"
+        elif not down:
+            self._guide_pressed_at = None
+            self._guide_hold_handled = False
         pressed = down and not self._guide_was_down
         self._guide_was_down = down
-        return pressed
+        return "pressed" if pressed else False
 
     def _xinput_guide_down(self):
         if not self._xinput_get_state_ex:
@@ -457,11 +453,9 @@ class JoystickManager:
         return False
 
     def _handle_exit_dialog(self):
-        """Gestisce exit confirmation dialog e tutti i dialog di conferma/info
-        creati da _make_confirm_dialog/_make_info_dialog (restart, shutdown, sleep...)."""
+        """Give the active modal exclusive gamepad navigation and activation."""
         modal = QApplication.activeModalWidget()
-        if not (getattr(self.parent, '_exit_dialog_active', False)
-                or getattr(modal, '_tvl_gamepad_dialog', False)):
+        if modal is None and not getattr(self.parent, '_exit_dialog_active', False):
             self._exit_dialog_last_x = (False, False, 0, False, False)
             return False
         
@@ -488,6 +482,8 @@ class JoystickManager:
             if self.joystick.get_button(i) and self._check_button_cooldown(i):
                 if i == 0:
                     self._simulate_key(Qt.Key.Key_Return)
+                elif i == 2 and hasattr(modal, "favorite_checkbox"):
+                    self._simulate_key(Qt.Key.Key_P)
                 elif i in (1, 2):
                     self._simulate_key(Qt.Key.Key_Escape)
         
@@ -529,40 +525,6 @@ class JoystickManager:
         
         return True
     
-    def _handle_category_dialog(self):
-        """Gestisce category dialog navigation"""
-        if not (hasattr(self.parent, '_category_dialog_open') and self.parent._category_dialog_open):
-            self._category_dialog_last_state = (False, False, 0, False, False)
-            return False
-        
-        y_axis = self.joystick.get_axis(1)
-        hat = self.joystick.get_hat(0) if self.joystick.get_numhats() > 0 else (0, 0)
-        dpad_up = self.joystick.get_button(11) if self.joystick.get_numbuttons() > 11 else False
-        dpad_down = self.joystick.get_button(12) if self.joystick.get_numbuttons() > 12 else False
-        
-        current_state = (y_axis > self.axis_deadzone, y_axis < -self.axis_deadzone,
-                        hat[1], dpad_down, dpad_up)
-        
-        if (y_axis > self.axis_deadzone and not self._category_dialog_last_state[0]) or \
-           (hat[1] == -1 and self._category_dialog_last_state[2] != -1) or \
-           (dpad_down and not self._category_dialog_last_state[3]):
-            self._simulate_key(Qt.Key.Key_Down)
-        elif (y_axis < -self.axis_deadzone and not self._category_dialog_last_state[1]) or \
-             (hat[1] == 1 and self._category_dialog_last_state[2] != 1) or \
-             (dpad_up and not self._category_dialog_last_state[4]):
-            self._simulate_key(Qt.Key.Key_Up)
-        
-        self._category_dialog_last_state = current_state
-        
-        for i in range(self.joystick.get_numbuttons()):
-            if self.joystick.get_button(i) and self._check_button_cooldown(i):
-                if i == 0:
-                    self._simulate_key(Qt.Key.Key_Return)
-                elif i in (1, 2):
-                    self._simulate_key(Qt.Key.Key_Escape)
-        
-        return True
-    
     def _handle_bottom_menu(self):
         """Gestisce menu basso (restart/shutdown/etc)"""
         if not self.parent.is_in_menu:
@@ -601,13 +563,6 @@ class JoystickManager:
         (hat_y == 1 and self._bottom_menu_last_y[1] != 1) or \
         (dpad_up and not self._bottom_menu_last_y[2]):
             self._simulate_key(Qt.Key.Key_Up)
-            
-            # Forza lo stato UP per evitare riapertura category selector
-            self._category_open_last_y = (
-                True if (y_axis < -self.axis_deadzone or dpad_up) else False,
-                hat_y if hat_y != 0 else 0,
-                True if dpad_up else False
-            )
         
         self._bottom_menu_last_y = current_state_y
         
@@ -618,47 +573,11 @@ class JoystickManager:
                     self._simulate_key(Qt.Key.Key_Return)
                 elif i in (1, 2):
                     self._simulate_key(Qt.Key.Key_Up)
-                    
-                    # Forza stato anche per pulsante B
-                    y_axis = self.joystick.get_axis(1)
-                    hat = self.joystick.get_hat(0) if self.joystick.get_numhats() > 0 else (0, 0)
-                    dpad_up = self.joystick.get_button(11) if self.joystick.get_numbuttons() > 11 else False
-                    
-                    self._category_open_last_y = (
-                        True if y_axis < -self.axis_deadzone else False,
-                        hat[1] if hat[1] != 0 else 0,
-                        True if dpad_up else False
-                    )
         
         return True
     
     def _handle_carousel_navigation(self):
         """Gestisce navigazione nel carousel principale"""
-        
-        # Controlla se UP deve aprire category selector
-        if self._category_selector_enabled and \
-        not self.parent.is_in_menu and \
-        not getattr(self.parent, 'reorder_active', False):
-            
-            y_axis = self.joystick.get_axis(1)
-            hat = self.joystick.get_hat(0) if self.joystick.get_numhats() > 0 else (0, 0)
-            dpad_up = self.joystick.get_button(11) if self.joystick.get_numbuttons() > 11 else False
-            
-            current_state_y_up = (y_axis < -self.axis_deadzone, hat[1], dpad_up)
-            
-            moved_up = (y_axis < -self.axis_deadzone and not self._category_open_last_y[0]) or \
-                    (hat[1] == 1 and self._category_open_last_y[1] != 1) or \
-                    (dpad_up and not self._category_open_last_y[2])
-            
-            # Aggiungi cooldown per D-PAD UP (button 11)
-            if moved_up and self._check_button_cooldown(11, cooldown_ms=250):
-                self.parent.sound_manager.navigate()
-                self.parent.is_in_category_selector = True
-                self.parent.category_selector.show_animated()
-                self._category_open_last_y = current_state_y_up
-                return
-            
-            self._category_open_last_y = current_state_y_up
         
         # Navigazione orizzontale (LEFT/RIGHT)
         x_axis = self.joystick.get_axis(0)
@@ -703,119 +622,17 @@ class JoystickManager:
         
         if moved_down and not self.parent.is_in_menu:
             self._simulate_key(Qt.Key.Key_Down)
-        elif moved_up and self.parent.is_in_menu:
+        elif moved_up and (
+            self.parent.is_in_menu
+            or (
+                getattr(self.parent, "active_row", "apps") == "apps"
+                and any(app.get("favorite", False) for app in self.parent.apps)
+            )
+        ):
             self._simulate_key(Qt.Key.Key_Up)
         
         self._carousel_last_y = current_state_y
 
-    def _handle_category_selector(self):
-        """Gestisce input joystick nel category selector"""
-        # Navigazione ORIZZONTALE (LEFT/RIGHT cambia categoria)
-        x_axis = self.joystick.get_axis(0)
-        y_axis = self.joystick.get_axis(1)
-        hat = self.joystick.get_hat(0) if self.joystick.get_numhats() > 0 else (0, 0)
-
-        # D-pad button numbers vary by pad; asking for a button the pad does
-        # not have raises and floors the whole poll loop (spurious
-        # "Controller Disconnected"). Guard like every other handler does.
-        num_buttons = self.joystick.get_numbuttons()
-        dpad_left = self.joystick.get_button(13) if num_buttons > 13 else False
-        dpad_right = self.joystick.get_button(14) if num_buttons > 14 else False
-        dpad_down = self.joystick.get_button(12) if num_buttons > 12 else False
-        
-        # Gestisce LEFT/RIGHT per cambiare categoria
-        current_state_x = (x_axis > self.axis_deadzone, x_axis < -self.axis_deadzone,
-                        hat[0], dpad_right, dpad_left)
-        
-        moved_right = (x_axis > self.axis_deadzone and not self._category_selector_last_x[0]) or \
-                    (hat[0] == 1 and self._category_selector_last_x[2] != 1) or \
-                    (dpad_right and not self._category_selector_last_x[3])
-        
-        moved_left = (x_axis < -self.axis_deadzone and not self._category_selector_last_x[1]) or \
-                    (hat[0] == -1 and self._category_selector_last_x[2] != -1) or \
-                    (dpad_left and not self._category_selector_last_x[4])
-        
-        if moved_right:
-            self.parent.sound_manager.navigate()
-            self.parent.category_selector.navigate_right()
-        elif moved_left:
-            self.parent.sound_manager.navigate()
-            self.parent.category_selector.navigate_left()
-        
-        self._category_selector_last_x = current_state_x
-        
-        # Navigazione VERTICALE (DOWN chiude)
-        current_state_y = (y_axis > self.axis_deadzone, hat[1], dpad_down)
-        
-        moved_down = (y_axis > self.axis_deadzone and not self._category_selector_last_y[0]) or \
-                    (hat[1] == -1 and self._category_selector_last_y[1] != -1) or \
-                    (dpad_down and not self._category_selector_last_y[2])
-        
-        if moved_down:
-            self.parent.sound_manager.navigate()
-            self._close_category_selector()
-            return
-        
-        self._category_selector_last_y = current_state_y
-        
-        # Pulsante B (chiude)
-        current_b_state = self.joystick.get_button(1)
-        
-        if current_b_state and not self._category_selector_last_b:
-            self.parent.sound_manager.back()
-            self._close_category_selector()
-            current_time = pygame.time.get_ticks()
-            self.button_cooldown[1] = current_time + 500
-            self._category_selector_last_b = True
-            return
-        
-        self._category_selector_last_b = current_b_state
-        
-        # Consuma altri pulsanti
-        for i in range(self.joystick.get_numbuttons()):
-            if self.joystick.get_button(i):
-                current_time = pygame.time.get_ticks()
-                self.button_cooldown[i] = current_time + 400
-
-    def _close_category_selector(self):
-        """Chiude il category selector"""
-        from PyQt6.QtCore import QTimer
-        
-        self.parent.is_in_category_selector = False
-        self.parent.category_selector.hide_animated()
-        
-        # Reset stati
-        self._category_selector_last_x = (False, False, 0, False, False)
-        self._category_selector_last_y = (False, 0, False)
-        self._category_selector_last_b = False
-        
-        # Blocca tutti i pulsanti per 500ms
-        current_time = pygame.time.get_ticks()
-        for i in range(self.joystick.get_numbuttons()):
-            self.button_cooldown[i] = current_time + 500
-        
-        # Forza lo stato DOWN/UP come TRUE per evitare retriggering
-        y_axis = self.joystick.get_axis(1)
-        hat = self.joystick.get_hat(0) if self.joystick.get_numhats() > 0 else (0, 0)
-        dpad_up = self.joystick.get_button(11) if self.joystick.get_numbuttons() > 11 else False
-        dpad_down = self.joystick.get_button(12) if self.joystick.get_numbuttons() > 12 else False
-        
-        # Forza TUTTI gli stati del carousel come se fossero già premuti
-        self._carousel_last_y = (
-            True if (y_axis > self.axis_deadzone or dpad_down) else False,  # DOWN
-            True if (y_axis < -self.axis_deadzone or dpad_up) else False,   # UP
-            hat[1] if hat[1] != 0 else 0,
-            True if dpad_down else False,  # D-PAD DOWN
-            True if dpad_up else False     # D-PAD UP
-        )
-        
-        # Forza anche lo stato per riaprire il category selector
-        self._category_open_last_y = (
-            True if (y_axis < -self.axis_deadzone or dpad_up) else False,  # UP analogico
-            hat[1] if hat[1] != 0 else 0,                                   # Hat Y
-            True if dpad_up else False                                      # D-PAD UP
-        )           
-            
     def _handle_main_buttons(self):
         """Gestisce i pulsanti principali del joystick"""
         for i in range(self.joystick.get_numbuttons()):
@@ -827,9 +644,9 @@ class JoystickManager:
                 self._simulate_key(Qt.Key.Key_Return)
             elif i == 1:  # B/Circle - Indietro
                 self._simulate_key(Qt.Key.Key_Escape)
-            elif i == 2:  # X/Square - Quick Category
+            elif i == 2:  # X/Square - Toggle Favorite
                 if not (hasattr(self.parent, 'reorder_active') and self.parent.reorder_active):
-                    self._simulate_key(Qt.Key.Key_C)
+                    self._simulate_key(Qt.Key.Key_P)
             elif i == 3:  # Y/Triangle - Delete
                 self._simulate_key(Qt.Key.Key_Delete)
             elif i == 4:  # LB/L1 - Quick Search

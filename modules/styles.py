@@ -21,7 +21,7 @@ class Styles:
 
     TRANSPARENT = "background-color: transparent;"
 
-    OVERLAY_DIM = "background-color: rgba(0, 0, 0, 0.3);"
+    OVERLAY_DIM = "background-color: rgba(4, 7, 14, 0.28);"
 
     SEPARATOR = "background-color: rgba(255,255,255,0.2); border: none;"
 
@@ -103,7 +103,8 @@ class Styles:
     def menu_bar_container(border_radius: int) -> str:
         return f"""
             QWidget {{
-                background-color: rgba(20, 20, 20, 0.6);
+                background-color: rgba(20, 24, 34, 0.84);
+                border: 1px solid rgba(255, 255, 255, 0.12);
                 border-radius: {border_radius}px;
             }}
         """
@@ -144,9 +145,19 @@ class Styles:
     @staticmethod
     def instructions(font_size: int) -> str:
         return (
-            f"color: rgba(255, 255, 255, 0.3); "
+            f"color: rgba(255, 255, 255, 0.72); "
             f"font-size: {font_size}px; "
-            f"background: transparent;"
+            f"background-color: rgba(12, 15, 23, 0.76); "
+            f"padding: 5px 16px; border-radius: 12px;"
+        )
+
+    @staticmethod
+    def row_heading(font_size: int, focused: bool = False) -> str:
+        color = "rgba(255, 255, 255, 0.95)" if focused else "rgba(255, 255, 255, 0.5)"
+        weight = "600" if focused else "500"
+        return (
+            f"color: {color}; font-size: {font_size}px; "
+            f"font-weight: {weight}; background: transparent;"
         )
 
     
@@ -157,7 +168,7 @@ class Styles:
     def tile_image_normal(border_radius: int, font_size: int) -> str:
         return f"""
             QLabel {{
-                background-color: #1a1a1a;
+                background-color: #151a25;
                 border-radius: {border_radius}px;
                 color: #cccccc;
                 font-size: {font_size}px;
@@ -170,7 +181,7 @@ class Styles:
         return f"""
             QLabel {{
                 background-color: #1a1a1a;
-                border: {border}px solid #ffffff;
+                border: {border}px solid #f5f8ff;
                 border-radius: {border_radius}px;
                 color: #ffffff;
                 font-size: {font_size}px;
@@ -182,7 +193,7 @@ class Styles:
     def tile_name_normal(font_size: int) -> str:
         return f"""
             QLabel {{
-                color: #999999;
+                color: rgba(255, 255, 255, 0.68);
                 font-size: {font_size}px;
                 background: transparent;
                 border: none;

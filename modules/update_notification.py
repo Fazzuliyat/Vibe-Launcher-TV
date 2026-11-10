@@ -18,7 +18,7 @@ from PyQt6.QtGui import QColor, QDesktopServices
 # Versione corrente 
 
 
-LAUNCHER_VERSION = "1.5.1"
+LAUNCHER_VERSION = "1.6.1"
 
 
 #  Costanti GitHub 

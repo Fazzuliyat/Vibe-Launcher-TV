@@ -17,10 +17,11 @@ It is built on **[TV Launcher by Darkvinx88](https://github.com/Darkvinx88/TvLau
 | | |
 |---|---|
 | **App icons that always show** | Apps that only have an `.exe` (for example VacuumTube) get a card built from the program's own icon, instead of an empty box. Real cover art is still used when you have it. |
-| **No "quit to desktop"** | Back / `Esc` / `B` on the home screen no longer asks to quit, and the ✕ button is gone from the power bar. Choose between doing nothing and sleeping with `HOME_BACK_ACTION`. |
-| **Gamepad works in every dialog** | D-pad, `A` and `B` now work in the Restart / Shutdown / Sleep confirmations and in the other confirm and info dialogs. |
-| **Sleep is really sleep** | The old command hibernated whenever Windows hibernation was on. Sleep now calls the Windows API directly and never hibernates. |
-| **Guide / Home button** | The Xbox Guide button (and, with one setting, the PlayStation button) jumps to the power bar or sleeps the PC. `GUIDE_ACTION` picks which. |
+| **Favorites and two-tier home** | A larger focused row presents Favorites above the complete app list. Mark apps with `P` or controller `X`, or use the Favorite checkbox in Add/Edit. |
+| **Universal Home hold** | Hold keyboard `Esc`, remote `Home`, or controller Guide for 3 seconds to return to the launcher home screen. |
+| **Reliable controller dialogs** | Modal dialogs capture controller navigation and confirmation, keeping input from leaking to the launcher behind them. |
+| **Sleep is really sleep** | Sleep calls the Windows API directly, requests sleep rather than hibernation, and reports a Windows failure instead of silently appearing to work. |
+| **TV-friendly UI** | The launcher uses a two-tier, focus-scaled layout, clearer input help, and a glass-inspired settings panel. |
 | **Quiet start for TV boot** | `VibeLauncher-Silent.bat` starts the launcher with no console window. |
 
 The full list is in the [changelog](CHANGELOG.md).
@@ -28,10 +29,11 @@ The full list is in the [changelog](CHANGELOG.md).
 ## Features
 
 - Full-screen carousel with smooth animations, scaling from 720p to 4K
+- Favorites tier and complete app row with controller/keyboard row navigation
 - Gamepad (Xbox / PlayStation), keyboard, Bluetooth TV remote, mouse and touch
 - Remap any key or remote button in **Settings → Advanced → Key Remapper**
 - Program scanner that finds installed apps and their icons
-- Quick search (`F` / `LB`) and drag-and-drop reordering (`R` / `RB`)
+- Quick search (`F` / `LB`), favorite toggle (`P` / `X`) and reordering (`R` / `RB`)
 - Automatic 16:9 cover art from SteamGridDB (optional, needs a free API key)
 - Streaming video wallpapers (Projectivy Overflight style)
 - PIN parental control, backup and restore of your settings
@@ -53,15 +55,15 @@ Your apps and settings are stored in `%APPDATA%\TVLauncher`, outside the program
 | Keyboard | Action |
 |---|---|
 | `←` `→` | Move through the carousel |
-| `↓` | Go to the power bar (Sleep, Restart, Shutdown); `↑` goes back |
+| `↑` / `↓` | Move between Favorites and All Apps; from All Apps, `↓` opens the power bar |
 | `Enter` | Launch the selected app |
+| `P` | Add/remove selected app from Favorites |
 | `F` | Quick search |
 | `R` | Reorder mode |
 | `S` | Settings menu |
 | `E` | Edit the selected app |
-| `C` | Assign a category |
 | `Delete` | Remove the selected app |
-| `Esc` | Back / cancel (does nothing on the home screen, see below) |
+| `Esc` | Back / cancel; hold for 3 seconds to return home |
 | `Ctrl` `Shift` `Q` | Close the launcher (keyboard only) |
 
 | Gamepad | Action |
@@ -69,12 +71,14 @@ Your apps and settings are stored in `%APPDATA%\TVLauncher`, outside the program
 | D-pad / left stick | Navigate |
 | `A` / Cross | Launch / confirm |
 | `B` / Circle | Back / cancel |
-| `X` / Square | Quick category editor |
+| `X` / Square | Add/remove selected app from Favorites |
 | `Y` / Triangle | Delete app |
 | `LB` / `RB` | Quick search / reorder mode |
 | `Start` | Settings menu |
 | `LT` + D-pad up/down | Volume |
-| **Guide / Home** | Jump to the power bar (press again to leave), or sleep, depending on `GUIDE_ACTION` |
+| **Guide / Home** | Short press opens/closes the power bar; hold for 3 seconds to return home |
+
+TV remotes use the keyboard/remote key mappings configured in **Settings → Advanced → Key Remapper**. Hold the remote's `Home` key for 3 seconds to return home.
 
 ## Make it a TV box
 
@@ -89,17 +93,12 @@ Your apps and settings are stored in `%APPDATA%\TVLauncher`, outside the program
 
 | Setting | Where | Values |
 |---|---|---|
-| `CATEGORY_SELECTOR_ENABLED` | `modules/category_manager.py` | `False` (default, no category bar) or `True` |
-| `HOME_BACK_ACTION` | top of `TvLauncher_Windows.py` | `"none"` (default) or `"sleep"` |
-| `GUIDE_ACTION` | top of `TvLauncher_Windows.py` | `"power_bar"` (default), `"sleep_confirm"` or `"sleep_now"` |
 | `GUIDE_BUTTON_INDEXES` | `modules/joystick_manager.py` | Button numbers for a PlayStation or other pad, for example `(12,)` |
 | `GITHUB_OWNER`, `GITHUB_REPO` | `modules/update_notification.py` | Your repository. While empty, the update check is off. |
 
-Careful with `HOME_BACK_ACTION = "sleep"`: one extra press of `B` after backing out of a menu will put the PC to sleep.
-
 ## Troubleshooting
 
-**The Guide button does nothing.**
+**The Guide hold does nothing.**
 Xbox controllers are read through XInput and should work after you turn off the Game Bar controller shortcut (see above). For a PlayStation pad, find its button number: open Command Prompt in the program folder, run `set TVL_DEBUG_BUTTONS=1`, then `TVLauncher.bat`, press the PS button and read `[joystick] button index N pressed`. Put `N` into `GUIDE_BUTTON_INDEXES`.
 
 **Sleep hibernates, or the PC does not sleep at all.**
