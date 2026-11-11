@@ -300,36 +300,9 @@ class ReorderMode:
         self.recently_exited = True
         
         if self.selected_index != self.target_index:
-            # Perform the reorder on the visible (possibly filtered) list
+            # Perform the reorder on the app list.
             app_to_move = self.launcher.apps.pop(self.selected_index)
             self.launcher.apps.insert(self.target_index, app_to_move)
-
-            # Mirror the move on the authoritative backup list, which is what
-            # save_config() actually persists (it writes _all_apps_backup, not
-            # apps). Without this, a reorder made inside a filtered category
-            # evaporates on the next rebuild. The two lists share the same app
-            # dicts, so match by identity.
-            backup = getattr(self.launcher, '_all_apps_backup', None)
-            if backup:
-                backup_pos = next((i for i, a in enumerate(backup)
-                                   if a is app_to_move), -1)
-                if backup_pos >= 0:
-                    backup.pop(backup_pos)
-                    try:
-                        if self.target_index == 0 and len(self.launcher.apps) > 1:
-                            first_visible_after = self.launcher.apps[1]
-                            neighbor_pos = next(i for i, a in enumerate(backup)
-                                                if a is first_visible_after)
-                            backup.insert(neighbor_pos, app_to_move)
-                        elif self.target_index > 0:
-                            last_visible_before = self.launcher.apps[self.target_index - 1]
-                            neighbor_pos = next(i for i, a in enumerate(backup)
-                                                if a is last_visible_before)
-                            backup.insert(neighbor_pos + 1, app_to_move)
-                        else:
-                            backup.insert(0, app_to_move)
-                    except (StopIteration, IndexError):
-                        backup.append(app_to_move)
 
             # Update current index to follow the moved app
             self.launcher.current_index = self.target_index
@@ -556,14 +529,19 @@ def integrate_reorder_mode(launcher):
     if hasattr(launcher, 'findChild'):
         instructions = launcher.findChildren(QLabel)
         for label in instructions:
-            if "Navigate:" in label.text():
+            if "Keyboard:" in label.text():
                 label.setText(
-                    "Navigate: ← → ↑ ↓ | Launch: Enter/A | Edit: E/X | Delete: Del/Y | "
-                    "Settings: S/Start | Reorder: R/RB | Search: F/LB | Exit: Esc/B"
+                    "Keyboard: arrows · Enter · P Favorite · E Edit · Del Remove · S Settings · F Search · hold Esc 3s\n"
+                    "Controller: D-pad · A Select · X Favorite · Y Remove · Start Settings · LB Search · RB Reorder · hold Guide 3s\n"
+                    "TV remote: mapped arrows / OK · P Favorite · E Edit · Del Remove · S Settings · F Search · hold Home 3s"
                 )
                 label.setStyleSheet(f"""
-                        color: rgba(255, 255, 255, 0.3);
+                        color: rgba(255, 255, 255, 0.72);
                         font-size: {launcher.scaling.scale_font(11)}px;
-                        background: transparent;
+                        background-color: rgba(12, 15, 23, 0.76);
+                        padding: 5px 16px;
+                        border-radius: 12px;
                     """)
+                label.setWordWrap(True)
+                launcher._position_bottom_overlay()
                 break

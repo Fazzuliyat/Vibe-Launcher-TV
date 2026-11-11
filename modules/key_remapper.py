@@ -34,9 +34,9 @@ class KeyMapper:
         'edit': Qt.Key.Key_E,
         'delete': Qt.Key.Key_Delete,
         'quick_search': Qt.Key.Key_F,
+        'toggle_favorite': Qt.Key.Key_P,
         'reorder_mode': Qt.Key.Key_R,
         'settings': Qt.Key.Key_S,
-        'change_category': Qt.Key.Key_C,
     }
     
     # Mappa inversa dalle azioni ai tasti standard
@@ -50,9 +50,9 @@ class KeyMapper:
         'edit': Qt.Key.Key_E,
         'delete': Qt.Key.Key_Delete,
         'quick_search': Qt.Key.Key_F,
+        'toggle_favorite': Qt.Key.Key_P,
         'reorder_mode': Qt.Key.Key_R,
         'settings': Qt.Key.Key_S,
-        'change_category': Qt.Key.Key_C,
     }
     
     @staticmethod
@@ -82,9 +82,9 @@ class KeyMapper:
         'edit': 'Edit App',
         'delete': 'Delete App',
         'quick_search': 'Quick Search',
+        'toggle_favorite': 'Toggle Favorite',
         'reorder_mode': 'Reorder Mode',
         'settings': 'Settings Menu',
-        'change_category': 'Change Category',
     }
     
     def __init__(self, config_file='key_mappings.json'):
@@ -128,6 +128,11 @@ class KeyMapper:
                         self.mappings['keyboard'] = self._serialize_mapping(
                             self.DEFAULT_KEYBOARD
                         )
+                    defaults = self._serialize_mapping(self.DEFAULT_KEYBOARD)
+                    for mapping in self.mappings.values():
+                        mapping.pop('change_category', None)
+                        for action, key in defaults.items():
+                            mapping.setdefault(action, key)
             except:
                 self._reset_to_defaults()
         else:
@@ -907,9 +912,9 @@ class KeyRemapperDialog(QDialog):
             ]),
             (" Features", "Advanced functionality", [
                 ('quick_search', 'Quick Search'),
+                ('toggle_favorite', 'Toggle Favorite'),
                 ('reorder_mode', 'Reorder Mode'),
                 ('settings', 'Settings Menu'),
-                ('change_category', 'Change Category'),
             ]),
         ]
         
@@ -1015,16 +1020,16 @@ class KeyRemapperDialog(QDialog):
         hint_texts = {
             'navigate_left': 'Move carousel left',
             'navigate_right': 'Move carousel right',
-            'navigate_up': 'Go to menu',
-            'navigate_down': 'Open bottom menu',
+            'navigate_up': 'Move to Favorites or leave the power bar',
+            'navigate_down': 'Move to Apps or open the power bar',
             'launch': 'Start selected app',
             'back': 'Exit or cancel',
             'edit': 'Modify app details',
             'delete': 'Remove app',
             'quick_search': 'Find apps quickly',
+            'toggle_favorite': 'Add or remove from Favorites',
             'reorder_mode': 'Rearrange apps',
             'settings': 'Open settings panel',
-            'change_category': 'Quick category change',
         }
         
         hint_label = QLabel(hint_texts.get(action_id, ''))

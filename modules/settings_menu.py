@@ -476,12 +476,13 @@ class SettingsMenu(QWidget):
     def init_ui(self):
         """Inizializza UI con stile coerente"""
         self.setFixedWidth(self.scaling.scale(420))
+        self.setObjectName("settingsPanel")
         
         # Stile principale coerente con program_scanner
         self.setStyleSheet("""
-            QWidget {
-                background-color: #1a1a1a;
-                border-left: 2px solid #444;
+            QWidget#settingsPanel {
+                background-color: #111621;
+                border-left: 1px solid rgba(255, 255, 255, 0.14);
             }
         """)
         
@@ -508,11 +509,12 @@ class SettingsMenu(QWidget):
     def _create_header(self):
         """Header con stile coerente"""
         header = QWidget()
+        header.setObjectName("settingsHeader")
         header.setFixedHeight(self.scaling.scale(100))
         header.setStyleSheet("""
-            QWidget {
-                background-color: #2a2a2a;
-                border-bottom: 2px solid #444;
+            QWidget#settingsHeader {
+                background-color: #1a2130;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.12);
                 border-left: none;
             }
         """)
@@ -593,7 +595,7 @@ class SettingsMenu(QWidget):
              self.menu_items.clear()
         
         content = QWidget()
-        content.setStyleSheet("QWidget { border: none; background-color: #1a1a1a; }")
+        content.setStyleSheet("QWidget { border: none; background-color: #111621; }")
         
         layout = QVBoxLayout(content)
         layout.setContentsMargins(
@@ -654,16 +656,6 @@ class SettingsMenu(QWidget):
         #  APPEARANCE  
         layout.addSpacing(self.scaling.scale(20))
         self._add_section_title(layout, "Appearance")
-        manage_cat_btn = self._create_menu_button(
-            "Manage Categories",
-            "Customize names, icons, and colors",
-            lambda: self._open_category_editor(),
-            icon_dir / "folder.png"
-        )
-        layout.addWidget(manage_cat_btn)
-        self.menu_items.append(manage_cat_btn)
-
-        
         self.clock_toggle = self._create_toggle(
             "Show Clock",
             "Display time and date in header",
@@ -1080,13 +1072,14 @@ class SettingsMenu(QWidget):
         
         btn.setStyleSheet(f"""
             QPushButton {{
-                background-color: #2a2a2a;
+                background-color: #202838;
                 border: 2px solid #444;
                 border-radius: {self.scaling.scale(8)}px;
                 text-align: left;
             }}
             QPushButton:hover {{
-                background-color: #3a3a3a;
+                background-color: #2b374b;
+                border-color: #7288aa;
             }}
         """)
         
@@ -1798,12 +1791,10 @@ class SettingsMenu(QWidget):
                 else:
                     self.launcher.config_data['video_wallpaper'] = imported_config.get('video_wallpaper', {})
             
-                # STEP 4: Reset index e backup categorie
+                # STEP 4: Reset list selection
                 self.launcher.current_index = 0
-                
-                # Rimuovi backup se esiste
-                if hasattr(self.launcher, '_all_apps_backup'):
-                    delattr(self.launcher, '_all_apps_backup')
+                self.launcher.active_row = "apps"
+                self.launcher.favorite_index = 0
                 
                 # STEP 5: Salva su disco
                 self.launcher.save_config()
@@ -1999,12 +1990,10 @@ class SettingsMenu(QWidget):
         if hasattr(self.launcher, 'key_mapper'):
             self.launcher.key_mapper.load_mappings()
         
-        #Rimuovi backup PRIMA di resettare apps
-        if hasattr(self.launcher, '_all_apps_backup'):
-            delattr(self.launcher, '_all_apps_backup')
-        
         # Applica al launcher
         self.launcher.apps = []
+        self.launcher.active_row = "apps"
+        self.launcher.favorite_index = 0
         
         if hasattr(self.launcher, 'background_manager') and self.launcher.background_manager is not None:
             self.launcher.background_manager.background_image = ''
@@ -2050,78 +2039,6 @@ class SettingsMenu(QWidget):
             "The launcher is now in its default state."
         )
     
-    def _open_category_editor(self):
-        """Apre il category editor"""
-        from modules.category_editor import CategoryEditorDialog
-        from PyQt6.QtCore import Qt
-        
-        if not hasattr(self.launcher, 'category_manager'):
-            msg_box = QMessageBox(self.launcher)
-            msg_box.setWindowTitle("Not Available")
-            msg_box.setText("Category system is not initialized!")
-            msg_box.setIcon(QMessageBox.Icon.Warning)
-            msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
-            
-            msg_box.setStyleSheet("""
-                QMessageBox {
-                    background-color: #1a1a1a;
-                    color: white;
-                }
-                QMessageBox QLabel {
-                    color: white;
-                    font-size: 14px;
-                    padding: 10px;
-                }
-                QMessageBox QPushButton {
-                    background-color: #2a2a2a;
-                    color: white;
-                    border: 2px solid #444;
-                    padding: 10px 30px;
-                    border-radius: 8px;
-                    font-size: 14px;
-                    font-weight: bold;
-                    min-width: 80px;
-                }
-                QMessageBox QPushButton:hover {
-                    background-color: #3a3a3a;
-                    border-color: #666;
-                }
-            """)
-            
-            msg_box.exec()
-            return
-        
-        self.close_menu()
-        
-        def open_editor():
-            dialog = CategoryEditorDialog(
-                self.launcher.category_manager,
-                self.scaling,
-                self.launcher
-            )
-            
-            if dialog.exec() == QDialog.DialogCode.Accepted:
-                self.launcher.save_config()
-
-                # Ricostruisce subito la barra delle categorie (i QLabel
-                # venivano creati solo all'avvio e mai piu' aggiornati,
-                # causando sia un IndexError dopo un delete sia rename
-                # che sembravano "non salvarsi" finche' non si riavviava).
-                if hasattr(self.launcher, 'category_selector'):
-                    try:
-                        self.launcher.category_selector.rebuild()
-                    except Exception as e:
-                        print(f"⚠️ Could not rebuild category selector: {e}")
-
-                # Usa il metodo helper già esistente per il messaggio di successo
-                self._show_success_dialog(
-                    "Changes Saved",
-                    "Categories updated!"
-                )
-            
-            self.launcher.setFocus()
-        
-        QTimer.singleShot(350, open_editor)
     def _handle_key_remapper(self):
             """Apre il dialog per rimappare i tasti"""
             if not self.launcher:

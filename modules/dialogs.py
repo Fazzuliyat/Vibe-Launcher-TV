@@ -10,8 +10,8 @@ Contiene tutti i dialog estratti da tvlauncher.py:
 from pathlib import Path
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout,
-    QLabel, QPushButton, QLineEdit, QFileDialog,
-    QWidget, QComboBox
+    QLabel, QPushButton, QLineEdit, QFileDialog, QCheckBox,
+    QWidget
 )
 from PyQt6.QtCore import Qt
 
@@ -266,7 +266,7 @@ class AddAppDialog(QDialog):
         self._s = s
         self.setWindowTitle("Add New App")
         self.setModal(True)
-        self.setFixedSize(s.scale(600), s.scale(520))
+        self.setFixedSize(s.scale(600), s.scale(480))
         self.setStyleSheet(f"""
             QDialog {{ background-color: #1a1a1a; }}
             QLabel {{ color: white; font-size: {s.scale_font(16)}px; }}
@@ -307,39 +307,12 @@ class AddAppDialog(QDialog):
         icon_container.addWidget(self.icon_button, 1)
         layout.addLayout(icon_container)
         
-        category_label = QLabel("Category:")
-        category_label.setAlignment(Qt.AlignmentFlag.AlignLeft)
-        layout.addWidget(category_label)
-        
-        self.category_combo = QComboBox()
-        if hasattr(parent, 'category_manager'):
-            self.category_combo.addItems(parent.category_manager.get_category_names())
-        else:
-            self.category_combo.addItems(['Games', 'Media', 'Programs', 'Other'])
-        
-        self.category_combo.setStyleSheet(f"""
-            QComboBox {{
-                background-color: #2a2a2a;
-                color: white;
-                border: 2px solid #444;
-                padding: {s.scale(10)}px;
-                border-radius: {s.scale(8)}px;
-                font-size: {s.scale_font(14)}px;
-            }}
-            QComboBox::drop-down {{ border: none; }}
-            QComboBox::down-arrow {{ image: none; border: none; }}
-            QComboBox QAbstractItemView {{
-                background-color: #2a2a2a;
-                color: white;
-                selection-background-color: #3a3a3a;
-            }}
-        """)
-        
-        index = self.category_combo.findText('Other')
-        if index >= 0:
-            self.category_combo.setCurrentIndex(index)
-        
-        layout.addWidget(self.category_combo)
+        self.favorite_checkbox = QCheckBox("Add to Favorites")
+        self.favorite_checkbox.setChecked(False)
+        self.favorite_checkbox.setStyleSheet(
+            f"color: white; font-size: {s.scale_font(14)}px; spacing: {s.scale(10)}px;"
+        )
+        layout.addWidget(self.favorite_checkbox)
         layout.addSpacing(s.scale(20))
         
         button_layout = QHBoxLayout()
@@ -388,6 +361,8 @@ class AddAppDialog(QDialog):
             self.update_confirm_focus()
         elif key == Qt.Key.Key_Return or key == Qt.Key.Key_Enter:
             self.confirm_buttons[self.confirm_index[0]].click()
+        elif key == Qt.Key.Key_P:
+            self.favorite_checkbox.setChecked(not self.favorite_checkbox.isChecked())
         elif key == Qt.Key.Key_Escape:
             self.reject()
         else:
@@ -414,5 +389,5 @@ class AddAppDialog(QDialog):
             'name': self.name_input.text(),
             'path': self.exe_input.text(),
             'icon': self.icon_input.text(),
-            'category': self.category_combo.currentText()
+            'favorite': self.favorite_checkbox.isChecked()
         }
